@@ -8,6 +8,7 @@ import { AttendanceCard } from "./AttendanceCard";
 import { CountdownPill } from "./Countdown";
 import { HostPanel } from "./HostPanel";
 import { LockedCard } from "./LockedCard";
+import { NotificationPrompt } from "./NotificationPrompt";
 import { SlotCard } from "./SlotCard";
 import { useEffect, useState } from "react";
 
@@ -48,6 +49,8 @@ export function TodayView() {
           <span className="text-brand">{state.me.name}</span> 👋
         </h1>
       </motion.header>
+
+      <NotificationPrompt />
 
       <motion.div variants={item}>
         <AttendanceCard />
