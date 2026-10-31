@@ -1,26 +1,160 @@
 @import "tailwindcss";
 
+/* ---------- Design tokens ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #fff7ea;
+  --bg-glow-1: #ffd9a8;
+  --bg-glow-2: #ffc2b0;
+  --surface: #ffffff;
+  --surface-2: #fff0da;
+  --ink: #2b1a10;
+  --muted: #8c7664;
+  --line: #f1e2cb;
+  --brand: #ef6a2b;
+  --gravy: #ef6a2b;
+  --fry: #e8a812;
+  --staple: #2fa466;
+  --yes: #2fa466;
+  --no: #e5483a;
+  --shadow: 0 14px 34px -16px rgba(140, 70, 10, 0.35), 0 2px 6px -2px rgba(140, 70, 10, 0.1);
+  --glass: rgba(255, 255, 255, 0.72);
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #15100c;
+    --bg-glow-1: #4a2a12;
+    --bg-glow-2: #3d1a1a;
+    --surface: #221913;
+    --surface-2: #2d2119;
+    --ink: #fbefe0;
+    --muted: #a8917c;
+    --line: #3a2b20;
+    --brand: #ff8447;
+    --gravy: #ff8447;
+    --fry: #f5bd32;
+    --staple: #4cc489;
+    --yes: #4cc489;
+    --no: #ff6a5c;
+    --shadow: 0 14px 34px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+    --glass: rgba(34, 25, 19, 0.72);
+    color-scheme: dark;
   }
 }
 
+:root[data-theme="dark"] {
+  --bg: #15100c;
+  --bg-glow-1: #4a2a12;
+  --bg-glow-2: #3d1a1a;
+  --surface: #221913;
+  --surface-2: #2d2119;
+  --ink: #fbefe0;
+  --muted: #a8917c;
+  --line: #3a2b20;
+  --brand: #ff8447;
+  --gravy: #ff8447;
+  --fry: #f5bd32;
+  --staple: #4cc489;
+  --yes: #4cc489;
+  --no: #ff6a5c;
+  --shadow: 0 14px 34px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+  --glass: rgba(34, 25, 19, 0.72);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-gravy: var(--gravy);
+  --color-fry: var(--fry);
+  --color-staple: var(--staple);
+  --color-yes: var(--yes);
+  --color-no: var(--no);
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", ui-serif, Georgia, serif;
+  --shadow-card: var(--shadow);
+}
+
+/* ---------- Base ---------- */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(60rem 36rem at 90% -10%, var(--bg-glow-1), transparent 60%),
+    radial-gradient(48rem 30rem at -10% 0%, var(--bg-glow-2), transparent 55%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.75rem;
+  box-shadow: var(--shadow);
+}
+
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--line);
+}
+
+.skeleton {
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--surface) 50%, var(--surface-2) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 1.25rem;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

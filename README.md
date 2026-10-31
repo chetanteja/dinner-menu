@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dinner Menu
 
-## Getting Started
+A small, beautiful web app for a household to decide dinner together.
 
-First, run the development server:
+Each day: everyone says **in / skip**, then proposes and agrees on a **gravy**, a **fry** and a **staple**. The host locks the menu (or it auto-locks at the lock time). Installable on phones as an app, with push reminders.
+
+Stack: Next.js (App Router) on Vercel, Supabase Postgres, Tailwind, Framer Motion, Vaul.
+
+## How it works
+
+- **Login:** pick your name, enter a 4-digit PIN. The first person to open a fresh deployment creates the family and becomes the host; others join with the host's invite code (Me tab).
+- **Voting:** each member has one pick per slot. Tapping *Agree* on someone's dish sets your pick to it; *Prefer something else* opens the dish picker (or add a brand new dish). A slot is **Agreed** when every attending member picked the same dish.
+- **Locking:** the host can lock any time (choosing a winner where votes are split). Otherwise it auto-locks at the lock time (default 6:00 PM): most votes wins, ties go to the host's pick, then the earliest pick. The host can reopen voting.
+- **Reminders:** push notification at the reminder time (default 5:00 PM) and when the menu locks.
+- **Timezone:** `Asia/Kolkata` by default (`DEFAULT_TIMEZONE` env var).
+
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+With no Supabase variables set, data is stored in `.data/db.json` (local dev only). Delete that folder to start fresh.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm run smoke` starts the app, seeds a demo family, and saves mobile screenshots to `.shots/`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploy for free (Vercel + Supabase)
 
-## Learn More
+### 1. Supabase (database)
+1. Create a project at [supabase.com](https://supabase.com) (free tier).
+2. **SQL Editor** > New query > paste [`supabase/schema.sql`](supabase/schema.sql) > Run.
+3. **Project Settings > API**: copy the **Project URL** and the **service_role** key (keep it secret).
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Vercel (hosting)
+1. Push this folder to a GitHub repo.
+2. At [vercel.com](https://vercel.com): **Add New > Project** > import the repo.
+3. Add environment variables (see [`env.example`](env.example)):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Value |
+| --- | --- |
+| `SUPABASE_URL` | Supabase Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key |
+| `SESSION_SECRET` | long random string (`openssl rand -base64 32`) |
+| `CRON_SECRET` | another long random string |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | optional, for push (`npx web-push generate-vapid-keys`) |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+4. Deploy. Open the URL **immediately** and create your family (the first visitor becomes the host).
 
-## Deploy on Vercel
+### 3. Reliable reminders and auto-lock (recommended)
+The menu already auto-locks the first time anyone opens the app after the lock time, and `vercel.json` has a once-a-day cron (free tier limit). For on-time push notifications, run [`supabase/cron.sql`](supabase/cron.sql) in the Supabase SQL editor after replacing the two placeholders. It pings `/api/cron/tick` every 5 minutes (idempotent).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 4. Install on phones
+- **Android (Chrome):** menu > Install app, then Me tab > Reminders > Turn on.
+- **iPhone (iOS 16.4+):** Safari > Share > Add to Home Screen, open it from the home screen, then Me tab > Reminders > Turn on.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Security notes
+- All database access happens on the server with the service-role key. Row level security is on with no policies, so the public anon key can read nothing.
+- PINs are bcrypt-hashed; 5 wrong tries locks that member for 10 minutes.
+- The sign-in screen lists member first names (needed for the tap-your-name UI). Don't post the link publicly.
+- A 4-digit PIN is convenience-grade protection, fine for a family dinner app.
