@@ -298,6 +298,8 @@ try {
   await call("/api/garbage/schedule", { anchor: addD(today, 3) }, gAmma);
   gs = await gstate();
   check("anchor +3: pickups fall on odd offsets, so tomorrow is next", !gs.todayIsPickup && gs.days[0].date === addD(today, 1), gs.days[0]);
+  r = await call("/api/garbage/ping", {}, gRiya);
+  check("cannot ping when there is no pickup today", r.status === 400, r);
   await shot("18-garbage-no-pickup-today", { cookie: gRiya, path: "/garbage" });
   await call("/api/garbage/schedule", { anchor: today }, gRiya);
 
@@ -313,6 +315,8 @@ try {
   check("assign a future pickup", r.status === 200, r);
   gs = await gstate();
   check("assignments show in state", gs.days[0].assignedTo === gid("Amma") && gs.days[1].assignedTo === gid("Neighbour"), gs.days);
+  r = await call("/api/garbage/ping", {}, gAmma);
+  check("the person down for it cannot ping themselves", r.status === 400, r);
   await shot("12-garbage-today", { cookie: gRiya, path: "/garbage" });
   await shot("12b-garbage-today-mine", { cookie: gAmma, path: "/garbage", scheme: "dark" });
   await shot("14-garbage-assign-sheet", {
@@ -335,6 +339,10 @@ try {
     },
   });
 
+  r = await call("/api/garbage/ping", {}, gRiya);
+  check("anyone else can ping the person who's down for it", r.status === 200 && r.json?.notified === "Amma", r);
+  r = await call("/api/garbage/ping", {}, gNeighbour);
+  check("pings are throttled for the whole group", r.status === 429, r);
   r = await call("/api/garbage/done", { date: addD(today, 2), done: true }, gNeighbour);
   check("cannot mark a future pickup as done", r.status === 400, r);
   r = await call("/api/garbage/done", { date: today, done: true }, gNeighbour);
@@ -343,6 +351,8 @@ try {
   check("done is recorded with who did it", gs.days[0].done?.by === gid("Neighbour"), gs.days[0]);
   r = await call("/api/garbage/assign", { date: today, memberId: gid("Riya") }, gRiya);
   check("cannot re-assign a pickup that is already done", r.status === 400, r);
+  r = await call("/api/garbage/ping", {}, gRiya);
+  check("no pinging once it's been taken out", r.status === 400, r);
   await shot("13-garbage-done", { cookie: gRiya, path: "/garbage" });
 
   // Reminder: nothing for a day that's already done; once per day otherwise; assignee only.

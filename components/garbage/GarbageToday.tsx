@@ -1,8 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CalendarClock, Check, ChevronRight, RotateCcw, Trash2, UserPlus, Undo2 } from "lucide-react";
-import { useState } from "react";
+import { BellRing, CalendarClock, Check, ChevronRight, RotateCcw, Trash2, UserPlus, Undo2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { prettyDate } from "@/lib/client";
 import type { GarbageDayView } from "@/lib/garbageShared";
 import { Avatar } from "../Avatar";
@@ -118,10 +118,32 @@ function useAssignee(row: GarbageDayView) {
 }
 
 function TodayCard({ row, onAssign }: { row: GarbageDayView; onAssign: () => void }) {
-  const { setDone, state } = useGarbage();
+  const { setDone, ping, state } = useGarbage();
   const { person, doneBy, mine } = useAssignee(row);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [pinged, setPinged] = useState(false);
+  const [pingError, setPingError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pinged) return;
+    const t = setTimeout(() => setPinged(false), 3500);
+    return () => clearTimeout(t);
+  }, [pinged]);
+
+  const sendPing = async () => {
+    setPinging(true);
+    setPingError(null);
+    try {
+      await ping();
+      setPinged(true);
+    } catch (e) {
+      setPingError(e instanceof Error ? e.message : "Couldn't send");
+    } finally {
+      setPinging(false);
+    }
+  };
 
   const toggle = async (done: boolean) => {
     setBusy(true);
@@ -208,6 +230,28 @@ function TodayCard({ row, onAssign }: { row: GarbageDayView; onAssign: () => voi
           )}
         </div>
         {error && <p className="mt-3 text-sm font-medium">{error}</p>}
+
+        {!done && !mine && (
+          <>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              disabled={pinging || pinged}
+              onClick={sendPing}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-black/15 py-3 text-sm font-semibold disabled:opacity-80"
+            >
+              {pinged ? (
+                <>
+                  <Check size={16} strokeWidth={3} /> Pinged {person ? person.name : "everyone"}
+                </>
+              ) : (
+                <>
+                  <BellRing size={16} /> {pinging ? "Sending…" : person ? `Ping ${person.name} now` : "Ping everyone now"}
+                </>
+              )}
+            </motion.button>
+            {pingError && <p className="mt-2 text-sm font-medium">{pingError}</p>}
+          </>
+        )}
       </div>
     </section>
   );

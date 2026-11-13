@@ -13,6 +13,7 @@ interface Actions {
   setDone: (date: string, done: boolean) => Promise<void>;
   setSchedule: (anchor: string) => Promise<void>;
   saveRemindTime: (remindTime: string) => Promise<void>;
+  ping: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -77,6 +78,10 @@ export function GarbageProvider({ state, children }: { state: GarbageState; chil
       },
       saveRemindTime: async (remindTime) => {
         await run(() => api("/api/garbage/settings", { json: { remindTime } }));
+      },
+      ping: async () => {
+        haptic(30);
+        await api("/api/garbage/ping", { json: {} });
       },
       logout: async () => {
         await api("/api/auth/logout?space=garbage", { method: "POST" });
