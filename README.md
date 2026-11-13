@@ -10,6 +10,10 @@ Stack: Next.js (App Router) on Vercel, Supabase Postgres, Tailwind, Framer Motio
 
 - **Login:** pick your name, enter a 4-digit PIN. The first person to open a fresh deployment creates the family and becomes the host; others join with the host's invite code (Me tab).
 - **Voting:** each member has one pick per slot. Tapping *Agree* on someone's dish sets your pick to it; *Prefer something else* opens the dish picker (or add a brand new dish). A slot is **Agreed** when every attending member picked the same dish.
+- **Your own proposal:** the person who first proposed a dish sees a "Your pick" badge instead of *Agree* (so it can't be withdrawn by accident). To change it, choose a different dish.
+- **Veg / non-veg today:** attending members say *Veg only* or *Non-veg is fine*. If anyone is veg, the card says to keep it veg and non-veg dishes get a warning. Every dish is marked veg (green) or non-veg (red); set it when adding a dish.
+- **Food is ready:** once the menu is locked, anyone (typically the cook) can ping everyone eating tonight. It needs a second tap to confirm and is limited to once per 3 minutes. A green banner shows who called dinner.
+- **Emojis:** the add-dish form has a large grouped emoji picker, plus a field to type or paste any emoji.
 - **Locking:** the host can lock any time (choosing a winner where votes are split). Otherwise it auto-locks at the lock time (default 6:00 PM): most votes wins, ties go to the host's pick, then the earliest pick. The host can reopen voting.
 - **Reminders:** push notification at the reminder time (default 5:00 PM) and when the menu locks.
 - **Timezone:** `Asia/Kolkata` by default (`DEFAULT_TIMEZONE` env var).
@@ -29,7 +33,7 @@ With no Supabase variables set, data is stored in `.data/db.json` (local dev onl
 
 ### 1. Supabase (database)
 1. Create a project at [supabase.com](https://supabase.com) (free tier).
-2. **SQL Editor** > New query > paste [`supabase/schema.sql`](supabase/schema.sql) > Run.
+2. **SQL Editor** > New query > paste [`supabase/schema.sql`](supabase/schema.sql) > Run. (Upgrading an existing install? Run the files in `supabase/migrations/` instead, in order.)
 3. **Project Settings > API**: copy the **Project URL** and the **service_role** key (keep it secret).
 
 ### 2. Vercel (hosting)

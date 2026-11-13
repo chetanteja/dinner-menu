@@ -27,15 +27,15 @@ export const MEMBER_COLORS = [
   "#4F7CF0",
 ];
 
-export const SEED_DISHES: Record<Category, { name: string; emoji: string }[]> = {
+export const SEED_DISHES: Record<Category, { name: string; emoji: string; veg?: boolean }[]> = {
   gravy: [
     { name: "Dal Tadka", emoji: "🍲" },
     { name: "Paneer Butter Masala", emoji: "🧈" },
     { name: "Palak Paneer", emoji: "🥬" },
     { name: "Chana Masala", emoji: "🫘" },
     { name: "Rajma", emoji: "🫘" },
-    { name: "Egg Curry", emoji: "🥚" },
-    { name: "Chicken Curry", emoji: "🍗" },
+    { name: "Egg Curry", emoji: "🥚", veg: false },
+    { name: "Chicken Curry", emoji: "🍗", veg: false },
     { name: "Sambar", emoji: "🍲" },
     { name: "Kadhi", emoji: "🥣" },
     { name: "Mixed Veg Curry", emoji: "🥕" },
@@ -49,7 +49,7 @@ export const SEED_DISHES: Record<Category, { name: string; emoji: string }[]> = 
     { name: "Cabbage Stir-fry", emoji: "🥬" },
     { name: "Jeera Aloo", emoji: "🥔" },
     { name: "Capsicum Fry", emoji: "🫑" },
-    { name: "Egg Bhurji", emoji: "🍳" },
+    { name: "Egg Bhurji", emoji: "🍳", veg: false },
     { name: "Paneer Bhurji", emoji: "🧀" },
   ],
   staple: [
@@ -66,7 +66,47 @@ export const SEED_DISHES: Record<Category, { name: string; emoji: string }[]> = 
   ],
 };
 
-export const EMOJI_CHOICES = [
-  "🍛", "🍲", "🥘", "🍚", "🫓", "🥔", "🥦", "🍆", "🫑", "🥕",
-  "🧀", "🥚", "🍗", "🌶️", "🍋", "🥛", "🫘", "🥬", "🍅", "🥥",
+export interface EmojiGroup {
+  label: string;
+  emojis: string[];
+}
+
+/** Food icons for the "add a dish" picker, grouped so they're easy to scan. */
+export const EMOJI_GROUPS: EmojiGroup[] = [
+  {
+    label: "Curries & bowls",
+    emojis: ["🍛", "🍲", "🥘", "🫕", "🥣", "🍜", "🍝", "🥗", "🍱", "🥡", "🫙", "🥫", "🧆", "🥙", "🌯", "🌮", "🫔"],
+  },
+  {
+    label: "Rice, bread & grains",
+    emojis: ["🍚", "🍙", "🍘", "🫓", "🍞", "🥖", "🥐", "🥯", "🥨", "🥞", "🧇", "🌽", "🫘", "🌾", "🍠"],
+  },
+  {
+    label: "Vegetables",
+    emojis: ["🥔", "🥕", "🥦", "🥬", "🥒", "🍆", "🫑", "🌶️", "🍅", "🧅", "🧄", "🍄", "🫛", "🥑", "🫒", "🥜", "🌰", "🍋", "🥥"],
+  },
+  {
+    label: "Egg, dairy & paneer",
+    emojis: ["🥚", "🍳", "🧀", "🧈", "🥛", "🍮", "🫗"],
+  },
+  {
+    label: "Non-veg & seafood",
+    emojis: ["🍗", "🍖", "🥩", "🥓", "🐟", "🍤", "🦐", "🦀", "🦞", "🦑", "🍣", "🍢", "🦪"],
+  },
+  {
+    label: "Snacks & street food",
+    emojis: ["🥟", "🥠", "🍟", "🍕", "🍔", "🌭", "🥪", "🍿", "🧂", "🍥", "🍡"],
+  },
+  {
+    label: "Sweets & fruit",
+    emojis: ["🍨", "🍧", "🍦", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫", "🍬", "🍭", "🍯", "🍎", "🍌", "🍇", "🍉", "🍊", "🍍", "🥭", "🍓", "🍑", "🥝"],
+  },
+  {
+    label: "Drinks",
+    emojis: ["☕", "🫖", "🍵", "🥤", "🧋", "🧃", "🧉", "🍶", "🥂", "🍹"],
+  },
+  {
+    label: "Other",
+    emojis: ["🍽️", "🥄", "🍴", "🥢", "🔥", "⭐", "❤️", "👨‍🍳", "👩‍🍳", "🫶"],
+  },
 ];

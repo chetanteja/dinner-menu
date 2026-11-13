@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { useSWRConfig } from "swr";
 import type { Category } from "@/lib/constants";
 import { api, fetcher, haptic } from "@/lib/client";
-import type { AppState } from "@/lib/shared";
+import type { AppState, Diet } from "@/lib/shared";
 
 export const STATE_KEY = "/api/state";
 
@@ -12,7 +12,9 @@ interface Actions {
   state: AppState;
   setAttending: (attending: boolean) => Promise<void>;
   setPick: (category: Category, dishId: string | null) => Promise<void>;
-  addDishAndPick: (category: Category, name: string, emoji: string) => Promise<void>;
+  setDiet: (diet: Diet) => Promise<void>;
+  announceReady: () => Promise<void>;
+  addDishAndPick: (category: Category, name: string, emoji: string, isVeg: boolean) => Promise<void>;
   lock: (overrides?: Partial<Record<Category, string>>) => Promise<void>;
   unlock: () => Promise<void>;
   hideDish: (id: string) => Promise<void>;
@@ -84,10 +86,24 @@ export function AppProvider({ state, children }: { state: AppState; children: Re
           }),
         );
       },
-      addDishAndPick: async (category, name, emoji) => {
+      setDiet: async (diet) => {
+        haptic();
+        await run(
+          () => api("/api/attendance", { json: { diet } }),
+          (s) => ({
+            ...s,
+            members: s.members.map((m) => (m.id === s.me.id ? { ...m, diet } : m)),
+          }),
+        );
+      },
+      announceReady: async () => {
+        haptic(30);
+        await run(() => api("/api/ready", { json: {} }));
+      },
+      addDishAndPick: async (category, name, emoji, isVeg) => {
         haptic(18);
         await run(async () => {
-          const dish = await api<{ id: string }>("/api/dishes", { json: { category, name, emoji } });
+          const dish = await api<{ id: string }>("/api/dishes", { json: { category, name, emoji, isVeg } });
           await api("/api/pick", { json: { category, dishId: dish.id } });
         });
       },

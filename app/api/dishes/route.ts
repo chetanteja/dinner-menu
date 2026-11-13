@@ -1,14 +1,15 @@
 import { CATEGORY_IDS, type Category } from "@/lib/constants";
 import { authed, cleanName, fail, json, readBody } from "@/lib/api";
+import { cleanEmoji } from "@/lib/emoji";
 import { addDish, hideDish, UserError } from "@/lib/store";
 
 export const POST = authed(async (req, member) => {
-  const body = await readBody<{ category?: string; name?: string; emoji?: string }>(req);
+  const body = await readBody<{ category?: string; name?: string; emoji?: string; isVeg?: boolean }>(req);
   if (!CATEGORY_IDS.includes(body.category as Category)) return fail("Unknown category");
   const name = cleanName(body.name, 40);
   if (name.length < 2) return fail("Give the dish a name");
-  const emoji = typeof body.emoji === "string" ? [...body.emoji].slice(0, 2).join("") : undefined;
-  const dish = await addDish(member, body.category as Category, name, emoji);
+  const emoji = cleanEmoji(body.emoji) ?? undefined;
+  const dish = await addDish(member, body.category as Category, name, emoji, body.isVeg !== false);
   return json({ id: dish.id, category: dish.category, name: dish.name, emoji: dish.emoji });
 });
 

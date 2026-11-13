@@ -10,6 +10,7 @@ import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/p
 import { formatClock } from "@/lib/time";
 import { useApp } from "./AppContext";
 import { Avatar } from "./Avatar";
+import { VegMark } from "./VegMark";
 
 export function MeView() {
   const { state, logout } = useApp();
@@ -246,7 +247,10 @@ function HostSettings() {
                         {dishes.map((d) => (
                           <li key={d.id} className="flex items-center gap-3 px-4 py-2.5">
                             <span className="text-xl">{d.emoji}</span>
-                            <span className="flex-1 text-sm font-medium">{d.name}</span>
+                            <span className="flex flex-1 items-center gap-2 text-sm font-medium">
+                              <VegMark isVeg={d.isVeg} size={13} />
+                              {d.name}
+                            </span>
                             <button
                               onClick={() => hideDish(d.id).catch(() => undefined)}
                               className="flex h-9 w-9 items-center justify-center rounded-full text-muted hover:text-no"

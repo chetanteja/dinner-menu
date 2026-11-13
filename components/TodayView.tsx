@@ -6,9 +6,11 @@ import { greeting, prettyDate } from "@/lib/client";
 import { useApp } from "./AppContext";
 import { AttendanceCard } from "./AttendanceCard";
 import { CountdownPill } from "./Countdown";
+import { DietCard } from "./DietCard";
 import { HostPanel } from "./HostPanel";
 import { LockedCard } from "./LockedCard";
 import { NotificationPrompt } from "./NotificationPrompt";
+import { ReadyBanner, ReadyButton } from "./ReadyCard";
 import { SlotCard } from "./SlotCard";
 import { useEffect, useState } from "react";
 
@@ -50,14 +52,23 @@ export function TodayView() {
         </h1>
       </motion.header>
 
+      <ReadyBanner />
+
       <NotificationPrompt />
 
       <motion.div variants={item}>
         <AttendanceCard />
       </motion.div>
 
+      <motion.div variants={item}>
+        <DietCard />
+      </motion.div>
+
       {locked ? (
-        <LockedCard />
+        <>
+          <LockedCard />
+          <ReadyButton />
+        </>
       ) : (
         <>
           <motion.div variants={item} className="flex items-end justify-between px-1 pt-2">

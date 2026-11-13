@@ -46,10 +46,13 @@ async function call(path, body, cookie, method) {
   return { status: res.status, json, cookie: set ? set.split(";")[0] : null };
 }
 
+const results = [];
 try {
   // ---- seed a demo household
   const host = await call("/api/auth/setup", { householdName: "The Sharma Kitchen", name: "Chitra", pin: "1234" });
   const hc = host.cookie;
+  // keep the day open regardless of the wall clock (auto-lock would otherwise kick in after 6 PM)
+  await call("/api/settings", { remindTime: "00:00", lockTime: "23:59" }, hc);
   const st0 = (await call("/api/state", null, hc)).json;
   const code = st0.household.joinCode;
   const amma = (await call("/api/auth/join", { code, name: "Amma", pin: "1111" })).cookie;
@@ -62,11 +65,45 @@ try {
   await call("/api/attendance", { attending: true }, amma);
   await call("/api/attendance", { attending: false }, papa);
   // Gravy: split. Fry: agreed? (3 attending would be host, amma only = 2 attending -> agreed by both). Staple: proposed by one.
-  await call("/api/pick", { category: "gravy", dishId: dish("gravy", "Paneer Butter Masala") }, hc);
+  await call("/api/pick", { category: "gravy", dishId: dish("gravy", "Chicken Curry") }, hc);
   await call("/api/pick", { category: "gravy", dishId: dish("gravy", "Dal Tadka") }, amma);
   await call("/api/pick", { category: "fry", dishId: dish("fry", "Cauliflower Fry") }, hc);
   await call("/api/pick", { category: "fry", dishId: dish("fry", "Cauliflower Fry") }, amma);
   await call("/api/pick", { category: "staple", dishId: dish("staple", "Chapati") }, amma);
+
+  // ---- API checks for the new features
+  const check = (name, ok, extra) => {
+    results.push(ok);
+    console.log(ok ? "PASS" : "FAIL", name, ok ? "" : JSON.stringify(extra));
+  };
+  let r = await call("/api/attendance", { diet: "veg" }, riya);
+  check("diet before answering is rejected", r.status === 400, r);
+  r = await call("/api/attendance", { diet: "meat" }, hc);
+  check("invalid diet is rejected", r.status === 400, r);
+  await call("/api/attendance", { diet: "nonveg" }, hc);
+  await call("/api/attendance", { diet: "veg" }, amma);
+  let st = (await call("/api/state", null, hc)).json;
+  check(
+    "diet shows in state",
+    st.members.find((m) => m.name === "Amma").diet === "veg" && st.members.find((m) => m.name === "Chitra").diet === "nonveg",
+    st.members,
+  );
+  check("skipping member has no diet", st.members.find((m) => m.name === "Papa").diet === null, st.members);
+  check(
+    "seeded dishes carry veg flag",
+    st.dishes.find((d) => d.name === "Chicken Curry").isVeg === false && st.dishes.find((d) => d.name === "Dal Tadka").isVeg === true,
+  );
+  r = await call("/api/dishes", { category: "fry", name: "Chicken 65", emoji: "👨‍🍳🍗", isVeg: false }, hc);
+  check("multi-part emoji kept intact", r.json?.emoji === "👨‍🍳", r.json);
+  r = await call("/api/dishes", { category: "staple", name: "Ragi Mudde", emoji: "🌾" }, amma);
+  check("new emoji accepted, defaults to veg", r.json?.emoji === "🌾", r.json);
+  r = await call("/api/dishes", { category: "fry", name: "Plain Text Dish", emoji: "abc" }, hc);
+  check("non-emoji input falls back to default icon", r.json?.emoji === "🥘", r.json);
+  st = (await call("/api/state", null, hc)).json;
+  check("non-veg flag stored on new dish", st.dishes.find((d) => d.name === "Chicken 65")?.isVeg === false);
+  check("new dish defaults to veg", st.dishes.find((d) => d.name === "Ragi Mudde")?.isVeg === true);
+  r = await call("/api/ready", {}, hc);
+  check("ready ping before lock is rejected", r.status === 400, r);
 
   const browser = await puppeteer.launch({
     executablePath: "/usr/bin/chromium-browser",
@@ -105,7 +142,50 @@ try {
   };
 
   await shot("01-login-light", {});
-  await shot("02-today-host-light", { cookie: hc });
+  // Host proposed Chicken Curry and Cauliflower Fry first: no Agree button on their own proposals.
+  await shot("02-today-host-light", {
+    cookie: hc,
+    action: async (p) => {
+      const info = await p.evaluate(() => ({
+        yourPick: document.querySelectorAll('[title="You proposed this dish"]').length,
+        agreedButtons: [...document.querySelectorAll("button")].filter((b) => b.textContent.trim() === "Agreed").length,
+        vegMarks: document.querySelectorAll('[aria-label="Non-vegetarian"]').length,
+        warning: document.body.innerText.includes("is veg today") || document.body.innerText.includes("are veg today"),
+      }));
+      check("host sees 'Your pick' on both own proposals", info.yourPick === 2, info);
+      check("host has no clickable Agreed on own proposals", info.agreedButtons === 0, info);
+      check("non-veg dish is marked and warns on a veg day", info.vegMarks >= 1 && info.warning, info);
+    },
+  });
+  // Amma proposed two dishes herself and only agreed with the host on Cauliflower Fry.
+  await shot("02b-today-amma", {
+    cookie: amma,
+    action: async (p) => {
+      const info = await p.evaluate(() => ({
+        yourPick: document.querySelectorAll('[title="You proposed this dish"]').length,
+        agreedButtons: [...document.querySelectorAll("button")].filter((b) => b.textContent.trim() === "Agreed").length,
+      }));
+      check("Amma sees 'Your pick' on her two proposals", info.yourPick === 2, info);
+      check("Amma can still toggle Agreed on a dish she only agreed with", info.agreedButtons === 1, info);
+    },
+  });
+  // Add-dish form with the big emoji picker and veg toggle
+  await shot("02c-add-dish-form", {
+    cookie: hc,
+    fullPage: false,
+    height: 1000,
+    action: async (p) => {
+      await clickText(p, "Prefer something else");
+      await sleep(700);
+      await clickText(p, "Add a new dish");
+      await sleep(900);
+      await p.evaluate(() => {
+        const el = [...document.querySelectorAll("[data-vaul-no-drag]")].find((e) => e.querySelector('[aria-label="Veg or non-veg"]'));
+        el?.scrollTo(0, el.scrollHeight);
+      });
+    },
+  });
+
   await shot("03-today-host-dark", { cookie: hc, scheme: "dark" });
   // Riya (unanswered)
   await shot("04-today-unanswered", { cookie: riya });
@@ -131,6 +211,12 @@ try {
 
   // Lock it and view the locked card
   await call("/api/lock", { action: "lock" }, hc);
+  r = await call("/api/ready", {}, hc);
+  check("ready ping works once locked", r.status === 200, r);
+  r = await call("/api/ready", {}, amma);
+  check("a second ping inside the cooldown is throttled", r.status === 429, r);
+  st = (await call("/api/state", null, amma)).json;
+  check("everyone sees who called dinner", st.ready?.by === "Chitra", st.ready);
   await shot("07-locked", { cookie: hc });
   await shot("08-locked-dark", { cookie: amma, scheme: "dark" });
   await shot("09-history", {
@@ -150,7 +236,8 @@ try {
 
   // ---- lazy auto-lock check from a fresh unlocked state
   await call("/api/lock", { action: "unlock" }, hc);
-  console.log("after unlock locked?", (await call("/api/state", null, hc)).json.day.locked);
+  st = (await call("/api/state", null, hc)).json;
+  check("reopening voting clears the ready banner", st.day.locked === false && st.ready === null, st.ready);
   // host_unlocked disables auto-lock for today, so test on a different household state: simulate by editing db
   const fs = await import("node:fs");
   const f = "/u/cv56729/dinner_menu/.data/db.json";
@@ -165,6 +252,7 @@ try {
   console.log("TEST FAILED", e);
 } finally {
   stop();
+  if (results.length) console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`);
   const errs = log.split("\n").filter((l) => /error|⨯/i.test(l));
   if (errs.length) console.log("SERVER LOG ERRORS:\n" + errs.slice(0, 10).join("\n"));
   process.exit(0);

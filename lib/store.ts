@@ -16,6 +16,7 @@ import {
   type AppState,
   type DishView,
   type HistoryResponse,
+  type Diet,
   type PickLite,
   type PublicMember,
 } from "./shared";
@@ -64,6 +65,7 @@ export async function createHousehold(name: string, hostName: string, pinHash: s
         category: cat,
         name: d.name,
         emoji: d.emoji,
+        is_veg: d.veg !== false,
         added_by: null,
         active: true,
         created_at: nowIso(),
@@ -148,12 +150,14 @@ export async function buildState(member: Member): Promise<AppState> {
   ]);
 
   const attMap = new Map(attendance.map((a) => [a.member_id, a.attending]));
+  const dietMap = new Map(attendance.map((a) => [a.member_id, a.diet ?? null]));
   const publicMembers: PublicMember[] = members.map((m) => ({
     id: m.id,
     name: m.name,
     color: m.color,
     isHost: m.is_host,
     attending: attMap.has(m.id) ? (attMap.get(m.id) as boolean) : null,
+    diet: attMap.get(m.id) ? (dietMap.get(m.id) ?? null) : null,
   }));
 
   const attendingIds = new Set(publicMembers.filter((m) => m.attending).map((m) => m.id));
@@ -170,6 +174,7 @@ export async function buildState(member: Member): Promise<AppState> {
       name: d.name,
       emoji: d.emoji,
       addedBy: d.added_by,
+      isVeg: d.is_veg !== false,
       loved: lovedCounts.get(d.id) ?? 0,
     }));
 
@@ -197,6 +202,10 @@ export async function buildState(member: Member): Promise<AppState> {
       lockedBy: day?.locked_by ?? null,
       lockedAuto: !!day?.locked && !day.locked_by,
     },
+    ready:
+      day?.ready_at && day.locked
+        ? { at: day.ready_at, by: members.find((m) => m.id === day.ready_by)?.name ?? "Someone" }
+        : null,
     finalMenu: finals.map((f) => ({ category: f.category, dishId: f.dish_id })),
   };
 }
@@ -303,7 +312,13 @@ export async function setPick(member: Member, category: Category, dishId: string
   );
 }
 
-export async function addDish(member: Member, category: Category, name: string, emoji?: string) {
+export async function addDish(
+  member: Member,
+  category: Category,
+  name: string,
+  emoji?: string,
+  isVeg = true,
+) {
   const db = getDb();
   const existing = await db.select<Dish>("dishes", { household_id: member.household_id, category });
   const dup = existing.find((d) => d.name.toLowerCase() === name.toLowerCase());
@@ -317,10 +332,72 @@ export async function addDish(member: Member, category: Category, name: string, 
     category,
     name,
     emoji: emoji || CATEGORIES.find((c) => c.id === category)!.emoji,
+    is_veg: isVeg,
     added_by: member.id,
     active: true,
     created_at: nowIso(),
   });
+}
+
+export async function setDiet(member: Member, diet: Diet) {
+  const db = getDb();
+  const { household, now } = await currentDay(member);
+  const [att] = await db.select<AttendanceRow>("attendance", {
+    household_id: household.id,
+    date: now.date,
+    member_id: member.id,
+  });
+  if (!att?.attending) throw new UserError("Say you're in for dinner first");
+  await db.update(
+    "attendance",
+    { household_id: household.id, date: now.date, member_id: member.id },
+    { diet, updated_at: nowIso() },
+  );
+}
+
+const READY_COOLDOWN_MS = 3 * 60 * 1000;
+
+/** "Food is ready!": push to everyone who isn't skipping dinner (except the sender). */
+export async function announceReady(member: Member) {
+  const db = getDb();
+  const { household, now, day } = await currentDay(member);
+  if (!day?.locked) throw new UserError("Lock the menu first, then call everyone when the food is ready");
+
+  if (day.ready_at) {
+    const ago = Date.now() - new Date(day.ready_at).getTime();
+    if (ago < READY_COOLDOWN_MS) {
+      const mins = Math.max(1, Math.ceil((READY_COOLDOWN_MS - ago) / 60000));
+      throw new UserError(`Everyone was just called. You can ping again in ${mins} min.`, 429);
+    }
+  }
+
+  await db.upsert(
+    "dinner_days",
+    { household_id: household.id, date: now.date, ready_at: nowIso(), ready_by: member.id },
+    ["household_id", "date"],
+  );
+
+  const hid = household.id;
+  const [members, attendance, finals, dishes] = await Promise.all([
+    listMembers(hid),
+    db.select<AttendanceRow>("attendance", { household_id: hid, date: now.date }),
+    db.select<FinalRow>("final_menu", { household_id: hid, date: now.date }),
+    db.select<Dish>("dishes", { household_id: hid }),
+  ]);
+  const skipping = new Set(attendance.filter((a) => !a.attending).map((a) => a.member_id));
+  const recipients = members.filter((m) => m.id !== member.id && !skipping.has(m.id)).map((m) => m.id);
+  const dishMap = new Map(dishes.map((d) => [d.id, d]));
+  const menu = CATEGORY_IDS.flatMap((c) => {
+    const f = finals.find((x) => x.category === c);
+    const d = f ? dishMap.get(f.dish_id) : undefined;
+    return d ? [`${d.emoji} ${d.name}`] : [];
+  });
+
+  await pushToMembers(recipients, {
+    title: "Food is ready! 🍽️",
+    body: `${member.name} says dinner is served${menu.length ? `: ${menu.join(" · ")}` : "."} Come to the table!`,
+    tag: "ready",
+  }).catch((e) => console.error(e));
 }
 
 export async function hideDish(member: Member, dishId: string) {
@@ -411,6 +488,8 @@ export async function unlockDay(member: Member) {
       locked_by: null,
       locked_at: null,
       host_unlocked: true,
+      ready_at: null,
+      ready_by: null,
     },
     ["household_id", "date"],
   );

@@ -31,6 +31,7 @@ create table if not exists dishes (
   category text not null check (category in ('gravy', 'fry', 'staple')),
   name text not null,
   emoji text not null,
+  is_veg boolean not null default true,
   added_by uuid references members(id) on delete set null,
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -44,6 +45,8 @@ create table if not exists dinner_days (
   locked_by uuid references members(id) on delete set null,
   locked_at timestamptz,
   host_unlocked boolean not null default false,
+  ready_at timestamptz,
+  ready_by uuid references members(id) on delete set null,
   primary key (household_id, date)
 );
 
@@ -52,6 +55,7 @@ create table if not exists attendance (
   date date not null,
   member_id uuid not null references members(id) on delete cascade,
   attending boolean not null,
+  diet text check (diet in ('veg', 'nonveg')),
   updated_at timestamptz not null default now(),
   primary key (household_id, date, member_id)
 );

@@ -2,6 +2,8 @@ import type { Category } from "./constants";
 
 // ---- Types sent to the browser ----
 
+export type Diet = "veg" | "nonveg";
+
 export interface PublicMember {
   id: string;
   name: string;
@@ -9,6 +11,8 @@ export interface PublicMember {
   isHost: boolean;
   /** true = in, false = skipping, null = hasn't answered */
   attending: boolean | null;
+  /** what they can eat today: veg only, or non-veg is fine. null = hasn't said */
+  diet: Diet | null;
 }
 
 export interface DishView {
@@ -17,6 +21,7 @@ export interface DishView {
   name: string;
   emoji: string;
   addedBy: string | null;
+  isVeg: boolean;
   /** how many times this dish ended up on a locked menu */
   loved: number;
 }
@@ -46,6 +51,8 @@ export interface AppState {
   picks: PickLite[];
   dishes: DishView[];
   day: { locked: boolean; lockedBy: string | null; lockedAuto: boolean };
+  /** set when someone has announced "food is ready" today */
+  ready: { at: string; by: string } | null;
   finalMenu: { category: Category; dishId: string }[];
 }
 
@@ -124,4 +131,34 @@ export function deriveSlot(
     agreeCount: groups[0]?.memberIds.length ?? 0,
     attendingCount,
   };
+}
+
+// ---- Veg / non-veg for the day ----
+
+export interface DietSummary {
+  kind: "none" | "pending" | "veg-only" | "nonveg-ok";
+  vegNames: string[];
+  pendingNames: string[];
+}
+
+/**
+ * Can everyone eating tonight have non-veg?
+ * - veg-only:  at least one person eating tonight is veg today
+ * - pending:   nobody said veg, but some haven't said yet
+ * - nonveg-ok: everyone eating said non-veg is fine
+ */
+export function dietSummary(members: PublicMember[]): DietSummary {
+  const eating = members.filter((m) => m.attending === true);
+  const vegNames = eating.filter((m) => m.diet === "veg").map((m) => m.name);
+  const pendingNames = eating.filter((m) => m.diet === null).map((m) => m.name);
+  if (eating.length === 0) return { kind: "none", vegNames, pendingNames };
+  if (vegNames.length > 0) return { kind: "veg-only", vegNames, pendingNames };
+  if (pendingNames.length > 0) return { kind: "pending", vegNames, pendingNames };
+  return { kind: "nonveg-ok", vegNames, pendingNames };
+}
+
+/** ["A"] -> "A", ["A","B"] -> "A and B", ["A","B","C"] -> "A, B and C" */
+export function joinNames(list: string[]): string {
+  if (list.length <= 1) return list.join("");
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }

@@ -7,8 +7,9 @@ import { Drawer } from "vaul";
 import clsx from "clsx";
 import { CATEGORIES, type Category } from "@/lib/constants";
 import { CAT_STYLE } from "@/lib/client";
-import { deriveSlot } from "@/lib/shared";
+import { deriveSlot, dietSummary, joinNames } from "@/lib/shared";
 import { useApp } from "./AppContext";
+import { VegMark } from "./VegMark";
 
 export function HostPanel() {
   const { state, unlock } = useApp();
@@ -87,6 +88,15 @@ function LockSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bo
   const host = state.members.find((m) => m.isHost);
   const dishMap = useMemo(() => new Map(state.dishes.map((d) => [d.id, d])), [state.dishes]);
   const waiting = state.members.filter((m) => m.attending === null);
+  const diet = dietSummary(state.members);
+  const nonVegChosen =
+    diet.kind === "veg-only" &&
+    CATEGORIES.some((c) => {
+      const slot = deriveSlot(c.id, attendingIds, state.picks, host?.id);
+      const sel = choice[c.id] ?? slot.leaderDishId;
+      const d = sel ? dishMap.get(sel) : undefined;
+      return !!d && !d.isVeg;
+    });
 
   const confirm = async () => {
     setBusy(true);
@@ -129,6 +139,11 @@ function LockSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bo
                 Still waiting on {waiting.map((m) => m.name).join(", ")}.
               </p>
             )}
+            {nonVegChosen && (
+              <p className="rounded-2xl bg-fry/15 px-4 py-3 text-sm font-medium text-fry">
+                Heads up: this menu has a non-veg dish, but {joinNames(diet.vegNames)} {diet.vegNames.length === 1 ? "is" : "are"} veg today.
+              </p>
+            )}
             {CATEGORIES.map((c) => {
               const slot = deriveSlot(c.id, attendingIds, state.picks, host?.id);
               const style = CAT_STYLE[c.id];
@@ -158,7 +173,10 @@ function LockSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bo
                             )}
                           >
                             <span className={clsx("flex h-10 w-10 items-center justify-center rounded-xl text-xl", style.soft)}>{d.emoji}</span>
-                            <span className="flex-1 font-display font-semibold">{d.name}</span>
+                            <span className="flex flex-1 items-center gap-1.5 font-display font-semibold">
+                              <VegMark isVeg={d.isVeg} size={13} />
+                              {d.name}
+                            </span>
                             <span className="text-xs font-semibold text-muted">
                               {g.memberIds.length} {g.memberIds.length === 1 ? "vote" : "votes"}
                             </span>

@@ -1,15 +1,16 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Crown, Plus, Shuffle, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, Crown, Plus, Shuffle, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import type { CategoryMeta } from "@/lib/constants";
 import { CAT_STYLE } from "@/lib/client";
-import { deriveSlot, type SlotView } from "@/lib/shared";
+import { deriveSlot, dietSummary, joinNames, type SlotView } from "@/lib/shared";
 import { useApp } from "./AppContext";
 import { AvatarStack } from "./Avatar";
 import { DishSheet } from "./DishSheet";
+import { VegMark } from "./VegMark";
 
 const STATUS_LABEL: Record<SlotView["status"], string> = {
   open: "Needs a pick",
@@ -33,6 +34,13 @@ export function SlotCard({ meta, readOnly }: { meta: CategoryMeta; readOnly: boo
   const dishMap = useMemo(() => new Map(state.dishes.map((d) => [d.id, d])), [state.dishes]);
   const memberMap = useMemo(() => new Map(state.members.map((m) => [m.id, m])), [state.members]);
   const myPick = state.picks.find((p) => p.memberId === state.me.id && p.category === meta.id)?.dishId ?? null;
+  const diet = useMemo(() => dietSummary(state.members), [state.members]);
+
+  /** Whoever picked this dish first today is the one who proposed it. */
+  const proposerOf = (dishId: string) =>
+    state.picks
+      .filter((p) => p.category === meta.id && p.dishId === dishId)
+      .sort((a, b) => (a.at < b.at ? -1 : 1))[0]?.memberId;
 
   const toggle = async (dishId: string) => {
     setError(null);
@@ -93,6 +101,8 @@ export function SlotCard({ meta, readOnly }: { meta: CategoryMeta; readOnly: boo
             const dish = dishMap.get(g.dishId);
             if (!dish) return null;
             const mine = myPick === g.dishId;
+            const iProposed = mine && proposerOf(g.dishId) === state.me.id;
+            const conflict = !dish.isVeg && diet.kind === "veg-only";
             const voters = g.memberIds.map((id) => memberMap.get(id)).filter(Boolean) as NonNullable<
               ReturnType<typeof memberMap.get>
             >[];
@@ -116,6 +126,7 @@ export function SlotCard({ meta, readOnly }: { meta: CategoryMeta; readOnly: boo
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
+                      <VegMark isVeg={dish.isVeg} />
                       <p className="line-clamp-2 font-display text-lg leading-tight font-semibold">{dish.name}</p>
                       {i === 0 && slot.groups.length > 1 && <Crown size={14} className="shrink-0 text-fry" />}
                     </div>
@@ -126,21 +137,41 @@ export function SlotCard({ meta, readOnly }: { meta: CategoryMeta; readOnly: boo
                       </span>
                     </div>
                   </div>
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
-                    disabled={readOnly}
-                    onClick={() => toggle(g.dishId)}
-                    className={clsx(
-                      "flex h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-colors",
-                      mine ? `${style.bg} text-white` : `border ${style.border} ${style.text} bg-transparent`,
-                      readOnly && "opacity-50",
-                    )}
-                    aria-pressed={mine}
-                  >
-                    {mine ? <Check size={16} strokeWidth={3} /> : null}
-                    {mine ? "Agreed" : "Agree"}
-                  </motion.button>
+                  {iProposed ? (
+                    <span
+                      className={clsx(
+                        "flex h-11 shrink-0 cursor-default items-center gap-1.5 rounded-full px-4 text-sm font-semibold select-none",
+                        style.soft,
+                        style.text,
+                      )}
+                      title="You proposed this dish"
+                    >
+                      <Check size={16} strokeWidth={3} />
+                      Your pick
+                    </span>
+                  ) : (
+                    <motion.button
+                      whileTap={{ scale: 0.9 }}
+                      disabled={readOnly}
+                      onClick={() => toggle(g.dishId)}
+                      className={clsx(
+                        "flex h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-colors",
+                        mine ? `${style.bg} text-white` : `border ${style.border} ${style.text} bg-transparent`,
+                        readOnly && "opacity-50",
+                      )}
+                      aria-pressed={mine}
+                    >
+                      {mine ? <Check size={16} strokeWidth={3} /> : null}
+                      {mine ? "Agreed" : "Agree"}
+                    </motion.button>
+                  )}
                 </div>
+                {conflict && (
+                  <p className="mt-3 flex items-start gap-1.5 rounded-xl bg-fry/15 px-3 py-2 text-xs font-semibold text-fry">
+                    <AlertTriangle size={13} className="mt-px shrink-0" />
+                    Non-veg, but {joinNames(diet.vegNames)} {diet.vegNames.length === 1 ? "is" : "are"} veg today.
+                  </p>
+                )}
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-line">
                   <motion.div
                     className={clsx("h-full rounded-full", style.bar)}

@@ -39,6 +39,7 @@ export interface Dish {
   category: Category;
   name: string;
   emoji: string;
+  is_veg: boolean | null;
   added_by: string | null;
   active: boolean;
   created_at: string;
@@ -51,6 +52,8 @@ export interface DinnerDay {
   locked_by: string | null;
   locked_at: string | null;
   host_unlocked: boolean;
+  ready_at: string | null;
+  ready_by: string | null;
 }
 
 export interface AttendanceRow {
@@ -58,6 +61,7 @@ export interface AttendanceRow {
   date: string;
   member_id: string;
   attending: boolean;
+  diet: "veg" | "nonveg" | null;
   updated_at: string;
 }
 

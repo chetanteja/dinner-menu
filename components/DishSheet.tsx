@@ -5,10 +5,12 @@ import { useMemo, useState } from "react";
 import { Drawer } from "vaul";
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import { EMOJI_CHOICES, type CategoryMeta } from "@/lib/constants";
+import type { CategoryMeta } from "@/lib/constants";
 import { CAT_STYLE } from "@/lib/client";
 import type { SlotView } from "@/lib/shared";
 import { useApp } from "./AppContext";
+import { EmojiPicker } from "./EmojiPicker";
+import { VegMark } from "./VegMark";
 
 export function DishSheet({
   open,
@@ -29,6 +31,7 @@ export function DishSheet({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [emoji, setEmoji] = useState(meta.emoji);
+  const [isVeg, setIsVeg] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -48,6 +51,8 @@ export function DishSheet({
       setQuery("");
       setAdding(false);
       setNewName("");
+      setIsVeg(true);
+      setEmoji(meta.emoji);
       setError(null);
     }, 300);
   };
@@ -68,7 +73,7 @@ export function DishSheet({
     setBusy(true);
     setError(null);
     try {
-      await addDishAndPick(meta.id, name, emoji);
+      await addDishAndPick(meta.id, name, emoji, isVeg);
       close();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't add that dish");
@@ -134,6 +139,7 @@ export function DishSheet({
                       className={clsx("flex shrink-0 items-center gap-2 rounded-full border py-2 pr-4 pl-2.5 text-sm font-semibold", style.border, style.softer)}
                     >
                       <span className="text-lg">{d.emoji}</span>
+                      <VegMark isVeg={d.isVeg} size={12} />
                       {d.name}
                       <span className={clsx("text-xs", style.text)}>×{d.loved}</span>
                     </button>
@@ -157,7 +163,10 @@ export function DishSheet({
                     )}
                   >
                     <span className={clsx("flex h-11 w-11 items-center justify-center rounded-xl text-2xl", style.soft)}>{d.emoji}</span>
-                    <span className="font-display text-[15px] leading-tight font-semibold">{d.name}</span>
+                    <span className="flex items-start gap-1.5 font-display text-[15px] leading-tight font-semibold">
+                      <VegMark isVeg={d.isVeg} size={13} className="mt-[3px]" />
+                      {d.name}
+                    </span>
                     {count > 0 && (
                       <span className={clsx("text-[11px] font-bold", style.text)}>
                         {count} {count === 1 ? "vote" : "votes"} today
@@ -203,20 +212,27 @@ export function DishSheet({
                   placeholder="e.g. Methi Malai Matar"
                   className="glass w-full rounded-xl px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand/60"
                 />
-                <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 py-1">
-                  {[meta.emoji, ...EMOJI_CHOICES.filter((e) => e !== meta.emoji)].map((e) => (
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Veg or non-veg">
+                  {[
+                    { v: true, label: "Veg" },
+                    { v: false, label: "Non-veg" },
+                  ].map((o) => (
                     <button
-                      key={e}
-                      onClick={() => setEmoji(e)}
+                      key={o.label}
+                      type="button"
+                      onClick={() => setIsVeg(o.v)}
+                      aria-pressed={isVeg === o.v}
                       className={clsx(
-                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-2xl transition-all",
-                        emoji === e ? `${style.soft} ring-2 ${style.ring}` : "bg-surface-2",
+                        "flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors",
+                        isVeg === o.v ? (o.v ? "border-yes bg-yes/12" : "border-no/70 bg-no/10") : "border-line bg-surface",
                       )}
                     >
-                      {e}
+                      <VegMark isVeg={o.v} size={15} />
+                      {o.label}
                     </button>
                   ))}
                 </div>
+                <EmojiPicker value={emoji} onChange={setEmoji} selectedClass={`${style.soft} ring-2 ${style.ring}`} />
                 {error && <p className="text-sm font-medium text-no">{error}</p>}
                 <div className="flex gap-2">
                   <button onClick={() => setAdding(false)} className="glass flex-1 rounded-xl py-3 font-semibold">
