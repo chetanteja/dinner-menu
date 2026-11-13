@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { fail, isPin, json, readBody } from "@/lib/api";
 import { createSession } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import type { Member } from "@/lib/db/types";
+import type { Household, Member } from "@/lib/db/types";
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 10;
@@ -35,7 +35,8 @@ export async function POST(req: Request) {
     }
 
     await db.update("members", { id: member.id }, { failed_attempts: 0, locked_until: null });
-    await createSession(member.id, member.household_id);
+    const [household] = await db.select<Household>("households", { id: member.household_id });
+    await createSession(member.id, member.household_id, household?.kind === "garbage" ? "garbage" : "dinner");
     return json({ ok: true });
   } catch (e) {
     console.error(e);

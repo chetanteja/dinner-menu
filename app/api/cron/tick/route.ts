@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { fail, json } from "@/lib/api";
+import { tickGarbage } from "@/lib/garbage";
 import { tick } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ function authorized(req: Request) {
 async function handle(req: Request) {
   if (!authorized(req)) return fail("Unauthorized", 401);
   try {
-    return json({ ok: true, results: await tick() });
+    return json({ ok: true, results: await tick(), garbage: await tickGarbage() });
   } catch (e) {
     console.error(e);
     return fail("tick failed", 500);

@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { authed, fail, json, readBody } from "@/lib/api";
 import { getDb } from "@/lib/db";
+import type { Member, PushSub } from "@/lib/db/types";
 
 interface SubBody {
   subscription?: { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
@@ -10,7 +11,17 @@ export const POST = authed(async (req, member) => {
   const { subscription: s } = await readBody<SubBody>(req);
   if (!s?.endpoint || !s.keys?.p256dh || !s.keys?.auth) return fail("Invalid subscription");
   const db = getDb();
-  await db.remove("push_subscriptions", { endpoint: s.endpoint });
+  // A phone signed in to both dinner and garbage shares one endpoint between two members, so only
+  // release it from other members of the SAME space (someone else used to sign in on this phone).
+  const existing = await db.select<PushSub>("push_subscriptions", { endpoint: s.endpoint });
+  for (const sub of existing) {
+    if (sub.member_id === member.id) {
+      await db.remove("push_subscriptions", { id: sub.id });
+      continue;
+    }
+    const [other] = await db.select<Member>("members", { id: sub.member_id });
+    if (!other || other.household_id === member.household_id) await db.remove("push_subscriptions", { id: sub.id });
+  }
   await db.insert("push_subscriptions", {
     id: randomUUID(),
     member_id: member.id,
@@ -20,10 +31,10 @@ export const POST = authed(async (req, member) => {
     created_at: new Date().toISOString(),
   });
   return json({ ok: true });
-});
+}, "query");
 
-export const DELETE = authed(async (req) => {
+export const DELETE = authed(async (req, member) => {
   const { endpoint } = await readBody<{ endpoint?: string }>(req);
-  if (endpoint) await getDb().remove("push_subscriptions", { endpoint });
+  if (endpoint) await getDb().remove("push_subscriptions", { endpoint, member_id: member.id });
   return json({ ok: true });
-});
+}, "query");

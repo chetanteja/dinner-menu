@@ -1,25 +1,39 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { History, User, UtensilsCrossed } from "lucide-react";
+import { History, User, UtensilsCrossed, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 
 export type Tab = "today" | "history" | "me";
 
-const TABS = [
-  { id: "today" as const, label: "Today", icon: UtensilsCrossed },
-  { id: "history" as const, label: "History", icon: History },
-  { id: "me" as const, label: "Me", icon: User },
+export interface NavTab<T extends string = string> {
+  id: T;
+  label: string;
+  icon: LucideIcon;
+}
+
+const TABS: NavTab<Tab>[] = [
+  { id: "today", label: "Today", icon: UtensilsCrossed },
+  { id: "history", label: "History", icon: History },
+  { id: "me", label: "Me", icon: User },
 ];
 
-export function BottomNav({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+export function BottomNav<T extends string = Tab>({
+  tab,
+  onChange,
+  tabs = TABS as unknown as NavTab<T>[],
+}: {
+  tab: T;
+  onChange: (t: T) => void;
+  tabs?: NavTab<T>[];
+}) {
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-6"
       style={{ paddingBottom: "max(0.9rem, env(safe-area-inset-bottom))" }}
     >
       <div className="glass flex w-full max-w-xs items-center gap-1 rounded-full p-1.5 shadow-card">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active = tab === t.id;
           return (
             <button

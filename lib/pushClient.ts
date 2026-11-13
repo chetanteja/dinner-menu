@@ -1,6 +1,10 @@
 import { api } from "./client";
 
+export type PushSpace = "dinner" | "garbage";
+
 export type PushStatus = "unsupported" | "ios-install" | "denied" | "off" | "on" | "unconfigured";
+
+const subscribeUrl = (space: PushSpace) => (space === "garbage" ? "/api/push/subscribe?space=garbage" : "/api/push/subscribe");
 
 const VAPID = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -36,7 +40,7 @@ export async function getPushStatus(): Promise<PushStatus> {
   return sub && Notification.permission === "granted" ? "on" : "off";
 }
 
-export async function enablePush(): Promise<PushStatus> {
+export async function enablePush(space: PushSpace = "dinner"): Promise<PushStatus> {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
   const reg = await navigator.serviceWorker.register("/sw.js");
@@ -48,15 +52,15 @@ export async function enablePush(): Promise<PushStatus> {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID!) as BufferSource,
     }));
-  await api("/api/push/subscribe", { json: { subscription: sub.toJSON() } });
+  await api(subscribeUrl(space), { json: { subscription: sub.toJSON() } });
   return "on";
 }
 
-export async function disablePush(): Promise<PushStatus> {
+export async function disablePush(space: PushSpace = "dinner"): Promise<PushStatus> {
   const reg = await navigator.serviceWorker.getRegistration();
   const sub = await reg?.pushManager.getSubscription();
   if (sub) {
-    await api("/api/push/subscribe", { method: "DELETE", json: { endpoint: sub.endpoint } });
+    await api(subscribeUrl(space), { method: "DELETE", json: { endpoint: sub.endpoint } });
     await sub.unsubscribe();
   }
   return "off";

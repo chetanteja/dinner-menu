@@ -105,23 +105,62 @@ try {
   r = await call("/api/ready", {}, hc);
   check("ready ping before lock is rejected", r.status === 400, r);
 
+  // ---- garbage space: separate group, own members and invite code
+  const addD = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 864e5).toISOString().slice(0, 10);
+  r = await call("/api/garbage/state", null, hc);
+  check("a dinner login does not open the garbage space", r.status === 401, r);
+  r = await call("/api/auth/members?space=garbage", null, hc);
+  check("garbage not set up yet, dinner login offered as a shortcut", r.json?.setupNeeded === true && r.json?.linkable?.name === "Chitra", r.json);
+  r = await call("/api/auth/members", null, hc);
+  check("dinner member list unaffected", r.json?.setupNeeded === false && r.json?.members?.length === 4, r.json);
+  r = await call("/api/auth/setup?space=garbage", { householdName: "Home", useOtherLogin: true }, riya);
+  const gRiya = r.cookie;
+  check("a dinner member can start the garbage group with no second PIN", r.status === 200 && gRiya?.startsWith("gb_session="), r);
+  r = await call("/api/auth/setup?space=garbage", { householdName: "Other", useOtherLogin: true }, hc);
+  check("only one garbage group can exist", r.status === 409, r);
+  let gs = (await call("/api/garbage/state", null, gRiya)).json;
+  check(
+    "garbage host is the person who started it, unscheduled",
+    gs.me.name === "Riya" && gs.me.isHost && gs.anchor === null && gs.todayIsPickup === false && gs.days.length === 0 && gs.members.length === 1,
+    gs,
+  );
+  r = await call("/api/state", null, riya);
+  check("dinner session still works alongside", r.status === 200, r.status);
+  const gcode = gs.group.joinCode;
+  r = await call("/api/auth/join?space=garbage", { code: "WRONG1", useOtherLogin: true }, amma);
+  check("wrong garbage invite code is refused", r.status === 403, r);
+  r = await call("/api/auth/join?space=garbage", { code: gcode, useOtherLogin: true }, amma);
+  const gAmma = r.cookie;
+  check("a dinner member joins garbage as herself", r.status === 200 && gAmma?.startsWith("gb_session="), r);
+  r = await call("/api/auth/join?space=garbage", { code: gcode, name: "Neighbour", pin: "4444" });
+  const gNeighbour = r.cookie;
+  check("someone outside the family joins garbage only", r.status === 200 && gNeighbour?.startsWith("gb_session="), r);
+  r = await call("/api/state", null, gNeighbour);
+  check("garbage-only member cannot see dinner", r.status === 401, r.status);
+  gs = (await call("/api/garbage/state", null, gRiya)).json;
+  check("garbage group has its own members", gs.members.map((m) => m.name).join() === "Riya,Amma,Neighbour", gs.members);
+  const gid = (n) => gs.members.find((m) => m.name === n).id;
+  const today = gs.today;
+
   const browser = await puppeteer.launch({
     executablePath: "/usr/bin/chromium-browser",
     headless: true,
     args: ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
   });
 
-  async function shot(name, { cookie, scheme = "light", action, fullPage = true, height = 844 } = {}) {
+  async function shot(name, { cookie, scheme = "light", action, fullPage = true, height = 844, path = "/" } = {}) {
     const page = await browser.newPage();
     await page.setViewport({ width: 390, height, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
+    // every screenshot starts signed out (the browser shares one cookie jar between pages)
+    await page.deleteCookie(...(await page.cookies(B)));
     if (cookie) {
       const [n, v] = cookie.split("=");
       await page.setCookie({ name: n, value: v, url: B });
     }
     page.on("pageerror", (e) => console.log("PAGEERROR", name, e.message));
     page.on("console", (m) => m.type() === "error" && console.log("CONSOLE", name, m.text()));
-    await page.goto(B, { waitUntil: "networkidle2", timeout: 60000 });
+    await page.goto(B + path, { waitUntil: "networkidle2", timeout: 60000 });
     await page.waitForFunction(() => !document.querySelector(".skeleton"), { timeout: 60000 }).catch(() => {});
     await sleep(1500);
     if (action) await action(page);
@@ -226,6 +265,136 @@ try {
     },
   });
   await shot("10-me-host", {
+    cookie: hc,
+    action: async (p) => {
+      await clickText(p, "Me");
+    },
+  });
+
+  // ---- garbage schedule, assignment, done, reminders
+  const gstate = async (c = gRiya) => (await call("/api/garbage/state", null, c)).json;
+  await shot("11-garbage-setup", { cookie: gRiya, path: "/garbage" });
+  await shot("11b-garbage-login", { path: "/garbage" });
+  await shot("11c-garbage-join-as", { cookie: hc, path: "/garbage" });
+
+  r = await call("/api/garbage/schedule", { anchor: "2020-01-01" }, gRiya);
+  check("a far-away anchor date is refused", r.status === 400, r);
+  r = await call("/api/garbage/schedule", { anchor: "nonsense" }, gRiya);
+  check("a malformed anchor date is refused", r.status === 400, r);
+  r = await call("/api/garbage/schedule", { anchor: today }, gNeighbour);
+  check("any garbage member can set the first schedule", r.status === 200, r);
+  gs = await gstate();
+  check(
+    "anchor today: today is a pickup, then every other day",
+    gs.todayIsPickup && gs.days.length === 6 && gs.days[0].date === today && gs.days[1].date === addD(today, 2) && gs.days[5].date === addD(today, 10),
+    gs.days,
+  );
+  await call("/api/garbage/schedule", { anchor: addD(today, 1) }, gAmma);
+  gs = await gstate();
+  check("anchor tomorrow: no garbage today, first pickup tomorrow", !gs.todayIsPickup && gs.days[0].date === addD(today, 1), gs.days[0]);
+  await call("/api/garbage/schedule", { anchor: addD(today, -2) }, gAmma);
+  gs = await gstate();
+  check("an anchor in the past still lines up (today is 2 days later)", gs.todayIsPickup && gs.days[0].date === today, gs.days[0]);
+  await call("/api/garbage/schedule", { anchor: addD(today, 3) }, gAmma);
+  gs = await gstate();
+  check("anchor +3: pickups fall on odd offsets, so tomorrow is next", !gs.todayIsPickup && gs.days[0].date === addD(today, 1), gs.days[0]);
+  await shot("18-garbage-no-pickup-today", { cookie: gRiya, path: "/garbage" });
+  await call("/api/garbage/schedule", { anchor: today }, gRiya);
+
+  r = await call("/api/garbage/assign", { date: addD(today, 1), memberId: gid("Amma") }, gRiya);
+  check("cannot assign a day that isn't a pickup day", r.status === 400, r);
+  r = await call("/api/garbage/assign", { date: today, memberId: "00000000-0000-0000-0000-000000000000" }, gRiya);
+  check("cannot assign someone who isn't in the group", r.status === 400, r);
+  r = await call("/api/garbage/assign", { date: addD(today, -2), memberId: gid("Amma") }, gRiya);
+  check("cannot assign a day in the past", r.status === 400, r);
+  r = await call("/api/garbage/assign", { date: today, memberId: gid("Amma") }, gRiya);
+  check("assign today to Amma", r.status === 200, r);
+  r = await call("/api/garbage/assign", { date: addD(today, 2), memberId: gid("Neighbour") }, gAmma);
+  check("assign a future pickup", r.status === 200, r);
+  gs = await gstate();
+  check("assignments show in state", gs.days[0].assignedTo === gid("Amma") && gs.days[1].assignedTo === gid("Neighbour"), gs.days);
+  await shot("12-garbage-today", { cookie: gRiya, path: "/garbage" });
+  await shot("12b-garbage-today-mine", { cookie: gAmma, path: "/garbage", scheme: "dark" });
+  await shot("14-garbage-assign-sheet", {
+    cookie: gRiya,
+    path: "/garbage",
+    fullPage: false,
+    action: async (p) => {
+      await clickText(p, "Change");
+      await sleep(900);
+    },
+  });
+  await shot("15-garbage-reset-sheet", {
+    cookie: gRiya,
+    path: "/garbage",
+    fullPage: false,
+    height: 900,
+    action: async (p) => {
+      await clickText(p, "Reset");
+      await sleep(900);
+    },
+  });
+
+  r = await call("/api/garbage/done", { date: addD(today, 2), done: true }, gNeighbour);
+  check("cannot mark a future pickup as done", r.status === 400, r);
+  r = await call("/api/garbage/done", { date: today, done: true }, gNeighbour);
+  check("anyone can mark today's garbage as taken out", r.status === 200, r);
+  gs = await gstate();
+  check("done is recorded with who did it", gs.days[0].done?.by === gid("Neighbour"), gs.days[0]);
+  r = await call("/api/garbage/assign", { date: today, memberId: gid("Riya") }, gRiya);
+  check("cannot re-assign a pickup that is already done", r.status === 400, r);
+  await shot("13-garbage-done", { cookie: gRiya, path: "/garbage" });
+
+  // Reminder: nothing for a day that's already done; once per day otherwise; assignee only.
+  await call("/api/garbage/settings", { remindTime: "00:00" }, gRiya);
+  const tick = async () =>
+    (await (await fetch(B + "/api/cron/tick", { headers: { Authorization: "Bearer testsecret" } })).json()).garbage;
+  check("no reminder when it is already taken out", (await tick()).length === 0);
+  await call("/api/garbage/done", { date: today, done: false }, gNeighbour);
+  let t = await tick();
+  check("reminder goes to the assignee when someone is down for it", t.length === 1 && t[0].action === "reminded assignee", t);
+  check("reminder is sent only once a day", (await tick()).length === 0);
+  r = await call("/api/garbage/settings", { remindTime: "19:30" }, gAmma);
+  check("only the host can change the reminder time", r.status === 403, r);
+  r = await call("/api/garbage/settings", { remindTime: "7pm" }, gRiya);
+  check("bad reminder time is refused", r.status === 400, r);
+
+  // Resetting the pattern drops planned names on days that stop being pickup days.
+  await call("/api/garbage/schedule", { anchor: addD(today, 1) }, gRiya);
+  await call("/api/garbage/schedule", { anchor: today }, gRiya);
+  gs = await gstate();
+  check("reset clears names planned for days that are no longer pickups", gs.days[0].assignedTo === null && gs.days[1].assignedTo === null, gs.days);
+
+  // Push endpoints: one phone can belong to a dinner member and a garbage member at once.
+  const fakeSub = (end) => ({ subscription: { endpoint: end, keys: { p256dh: "p", auth: "a" } } });
+  const E = "https://push.example/endpoint-1";
+  await call("/api/push/subscribe", fakeSub(E), riya);
+  await call("/api/push/subscribe?space=garbage", fakeSub(E), gRiya);
+  const fsMod = await import("node:fs");
+  const subsOf = () =>
+    JSON.parse(fsMod.readFileSync("/u/cv56729/dinner_menu/.data/db.json", "utf8")).push_subscriptions.filter((x) => x.endpoint === E);
+  check("one phone can hold a dinner and a garbage subscription", subsOf().length === 2, subsOf());
+  await call("/api/push/subscribe", fakeSub(E), amma);
+  check(
+    "another dinner member taking the phone replaces only the dinner subscription",
+    subsOf().length === 2 && subsOf().some((x) => x.member_id === gs.me.id) && subsOf().filter((x) => x.member_id !== gs.me.id).length === 1,
+    subsOf(),
+  );
+
+  // Sign in with PIN lands in the right space
+  r = await call("/api/auth/login", { memberId: gid("Neighbour"), pin: "4444" });
+  check("garbage PIN login sets the garbage cookie", r.status === 200 && r.cookie?.startsWith("gb_session="), r);
+  r = await call("/api/auth/login", { memberId: st0.members[0].id, pin: "1234" });
+  check("dinner PIN login sets the dinner cookie", r.status === 200 && r.cookie?.startsWith("dm_session="), r);
+
+  await shot("16-garbage-group", {
+    cookie: gRiya,
+    path: "/garbage",
+    action: async (p) => {
+      await clickText(p, "Group");
+    },
+  });
+  await shot("17-dinner-me-link", {
     cookie: hc,
     action: async (p) => {
       await clickText(p, "Me");

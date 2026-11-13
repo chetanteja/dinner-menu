@@ -158,3 +158,36 @@ button:disabled {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---------- Garbage space: green accent ----------
+   Set on <body> (not the page wrapper) so portalled bottom sheets pick it up too. */
+body:has([data-space="garbage"]) {
+  --brand: #1f9d63;
+  --bg: #f1faf3;
+  --bg-glow-1: #c4efd4;
+  --bg-glow-2: #e3f2b8;
+  --surface-2: #e8f6ec;
+  --line: #d3eadb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body:has([data-space="garbage"]) {
+    --brand: #3fcf8b;
+    --bg: #0f1612;
+    --bg-glow-1: #163a27;
+    --bg-glow-2: #25361a;
+    --surface: #16201a;
+    --glass: rgba(22, 32, 26, 0.72);
+    --surface-2: #1b2a21;
+    --line: #26382c;
+  }
+}
+:root[data-theme="dark"] body:has([data-space="garbage"]) {
+  --brand: #3fcf8b;
+  --bg: #0f1612;
+  --bg-glow-1: #163a27;
+  --bg-glow-2: #25361a;
+  --surface: #16201a;
+  --glass: rgba(22, 32, 26, 0.72);
+  --surface-2: #1b2a21;
+  --line: #26382c;
+}

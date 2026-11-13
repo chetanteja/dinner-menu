@@ -1,12 +1,13 @@
 "use client";
 
-import { Bell, BellOff, Check, ChevronDown, Copy, Crown, LogOut, Monitor, Moon, Sun, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Bell, BellOff, Check, ChevronDown, ChevronRight, Copy, Crown, LogOut, Monitor, Moon, Sun, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CATEGORIES } from "@/lib/constants";
 import { CAT_STYLE } from "@/lib/client";
-import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/pushClient";
+import { disablePush, enablePush, getPushStatus, type PushSpace, type PushStatus } from "@/lib/pushClient";
 import { formatClock } from "@/lib/time";
 import { useApp } from "./AppContext";
 import { Avatar } from "./Avatar";
@@ -33,6 +34,17 @@ export function MeView() {
       {state.me.isHost && <HostSettings />}
       <Family />
 
+      <Link href="/garbage" className="card flex items-center gap-4 p-4">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-yes/15 text-yes">
+          <Trash2 size={20} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-display text-lg leading-tight font-semibold">Garbage day</span>
+          <span className="block text-sm text-muted">Separate group with its own members</span>
+        </span>
+        <ChevronRight size={18} className="text-muted" />
+      </Link>
+
       <button
         onClick={logout}
         className="card flex w-full items-center justify-center gap-2 py-4 font-semibold text-no"
@@ -43,7 +55,7 @@ export function MeView() {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="card p-4">
       <h2 className="mb-3 text-xs font-bold tracking-wider text-muted uppercase">{title}</h2>
@@ -52,7 +64,15 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Notifications() {
+export function Notifications({
+  space = "dinner",
+  onCopy = "You'll get a nudge before the menu locks.",
+  offCopy = "Get a reminder to vote before the menu locks.",
+}: {
+  space?: PushSpace;
+  onCopy?: string;
+  offCopy?: string;
+}) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -63,7 +83,7 @@ function Notifications() {
   const toggle = async () => {
     setBusy(true);
     try {
-      setStatus(status === "on" ? await disablePush() : await enablePush());
+      setStatus(status === "on" ? await disablePush(space) : await enablePush(space));
     } catch {
       setStatus(await getPushStatus());
     } finally {
@@ -72,8 +92,8 @@ function Notifications() {
   };
 
   const copy: Record<PushStatus, string> = {
-    on: "You'll get a nudge before the menu locks.",
-    off: "Get a reminder to vote before the menu locks.",
+    on: onCopy,
+    off: offCopy,
     denied: "Notifications are blocked in your browser settings.",
     unsupported: "This browser doesn't support notifications.",
     "ios-install": "On iPhone: tap Share, then “Add to Home Screen”, and open the app from there.",
@@ -104,7 +124,7 @@ function Notifications() {
   );
 }
 
-function Appearance() {
+export function Appearance() {
   const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
   useEffect(() => {
     try {
@@ -273,7 +293,7 @@ function HostSettings() {
   );
 }
 
-function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-semibold text-muted">{label}</span>

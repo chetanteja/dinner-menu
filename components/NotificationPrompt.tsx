@@ -4,14 +4,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Share, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
-import { enablePush, getPushStatus, type PushStatus } from "@/lib/pushClient";
+import { enablePush, getPushStatus, type PushSpace, type PushStatus } from "@/lib/pushClient";
 
 const DISMISS_KEY = "dm-push-dismissed";
+const dismissKey = (space: PushSpace) => (space === "garbage" ? "gb-push-dismissed" : DISMISS_KEY);
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 
-function snoozed() {
+function snoozed(space: PushSpace) {
   try {
-    const t = Number(localStorage.getItem(DISMISS_KEY) ?? 0);
+    const t = Number(localStorage.getItem(dismissKey(space)) ?? 0);
     return Date.now() - t < SNOOZE_MS;
   } catch {
     return false;
@@ -19,11 +20,15 @@ function snoozed() {
 }
 
 /** Re-attach this phone's existing push subscription to whoever is signed in right now. */
-async function syncSubscription() {
+async function syncSubscription(space: PushSpace) {
   try {
     const reg = await navigator.serviceWorker.getRegistration();
     const sub = await reg?.pushManager.getSubscription();
-    if (sub) await api("/api/push/subscribe", { json: { subscription: sub.toJSON() } });
+    if (sub) {
+      await api(space === "garbage" ? "/api/push/subscribe?space=garbage" : "/api/push/subscribe", {
+        json: { subscription: sub.toJSON() },
+      });
+    }
   } catch {
     /* best effort */
   }
@@ -33,7 +38,15 @@ async function syncSubscription() {
  * Nudges everyone to turn on reminders. Browsers require a tap before they will show the
  * permission prompt, so this is a one-tap banner rather than a silent opt-in.
  */
-export function NotificationPrompt() {
+export function NotificationPrompt({
+  space = "dinner",
+  title = "Never miss the vote",
+  hint = "Get a nudge before the menu locks.",
+}: {
+  space?: PushSpace;
+  title?: string;
+  hint?: string;
+}) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [hidden, setHidden] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -45,25 +58,25 @@ export function NotificationPrompt() {
       if (cancelled) return;
 
       if (s === "on") {
-        await syncSubscription();
+        await syncSubscription(space);
       } else if (s === "off" && typeof Notification !== "undefined" && Notification.permission === "granted") {
         // Already allowed on this device (new login, cleared data): subscribe silently.
-        const next = await enablePush().catch(() => "off" as PushStatus);
+        const next = await enablePush(space).catch(() => "off" as PushStatus);
         if (!cancelled) setStatus(next);
         return;
       }
       setStatus(s);
-      setHidden(snoozed());
+      setHidden(snoozed(space));
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [space]);
 
   const dismiss = () => {
     setHidden(true);
     try {
-      localStorage.setItem(DISMISS_KEY, String(Date.now()));
+      localStorage.setItem(dismissKey(space), String(Date.now()));
     } catch {
       /* ignore */
     }
@@ -72,7 +85,7 @@ export function NotificationPrompt() {
   const turnOn = async () => {
     setBusy(true);
     try {
-      const next = await enablePush();
+      const next = await enablePush(space);
       setStatus(next);
       if (next === "on") setHidden(true);
     } catch {
@@ -98,11 +111,11 @@ export function NotificationPrompt() {
               {status === "ios-install" ? <Share size={20} /> : <Bell size={20} />}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="font-display text-lg leading-tight font-semibold">Never miss the vote</p>
+              <p className="font-display text-lg leading-tight font-semibold">{title}</p>
               <p className="text-sm text-muted">
                 {status === "ios-install"
                   ? "Tap Share, then “Add to Home Screen”, and open the app from there to get reminders."
-                  : "Get a nudge before the menu locks."}
+                  : hint}
               </p>
             </div>
             {status === "off" && (

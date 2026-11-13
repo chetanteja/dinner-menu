@@ -10,6 +10,7 @@ import type {
   Member,
   PickRow,
 } from "./db/types";
+import type { Space } from "./auth";
 import { pushToMembers } from "./push";
 import {
   deriveSlot,
@@ -35,8 +36,9 @@ export class UserError extends Error {
 
 // ---------- households & members ----------
 
-export async function getHousehold(): Promise<Household | null> {
-  const [h] = await getDb().select<Household>("households");
+/** The dinner family (default) or the separate garbage group. One of each per deployment. */
+export async function getHousehold(kind: Space = "dinner"): Promise<Household | null> {
+  const [h] = await getDb().select<Household>("households", { kind });
   return h ?? null;
 }
 
@@ -45,18 +47,21 @@ function newJoinCode() {
   return Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
 }
 
-export async function createHousehold(name: string, hostName: string, pinHash: string) {
+export async function createHousehold(name: string, hostName: string, pinHash: string, kind: Space = "dinner") {
   const db = getDb();
   const household = await db.insert<Household>("households", {
     id: randomUUID(),
     name,
     join_code: newJoinCode(),
     timezone: process.env.DEFAULT_TIMEZONE || "Asia/Kolkata",
-    remind_time: "17:00",
-    lock_time: "18:00",
+    remind_time: kind === "garbage" ? "19:30" : "17:00",
+    lock_time: kind === "garbage" ? "23:59" : "18:00",
+    kind,
+    anchor_date: null,
     created_at: nowIso(),
   });
   const host = await insertMember(household.id, hostName, pinHash, true, 0);
+  if (kind === "garbage") return { household, host };
   for (const cat of CATEGORY_IDS) {
     for (const d of SEED_DISHES[cat]) {
       await db.insert("dishes", {
@@ -81,6 +86,7 @@ async function insertMember(
   pinHash: string,
   isHost: boolean,
   index: number,
+  color?: string,
 ) {
   return getDb().insert<Member>("members", {
     id: randomUUID(),
@@ -88,20 +94,34 @@ async function insertMember(
     name,
     pin_hash: pinHash,
     is_host: isHost,
-    color: MEMBER_COLORS[index % MEMBER_COLORS.length],
+    color: color ?? MEMBER_COLORS[index % MEMBER_COLORS.length],
     failed_attempts: 0,
     locked_until: null,
     created_at: nowIso(),
   });
 }
 
-export async function joinHousehold(household: Household, name: string, pinHash: string) {
+export async function joinHousehold(household: Household, name: string, pinHash: string, color?: string) {
   const members = await listMembers(household.id);
   if (members.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
-    throw new UserError("Someone with that name is already in the family");
+    throw new UserError(
+      household.kind === "garbage" ? "Someone with that name is already in the group" : "Someone with that name is already in the family",
+    );
   }
-  if (members.length >= 12) throw new UserError("The family is full");
-  return insertMember(household.id, name, pinHash, false, members.length);
+  if (members.length >= (household.kind === "garbage" ? 40 : 12)) throw new UserError("This group is full");
+  return insertMember(household.id, name, pinHash, false, members.length, color);
+}
+
+/** Start or join the other space using a dinner/garbage login the person already has (no second PIN). */
+export async function linkMember(household: Household, from: Member, asHost: boolean) {
+  const members = await listMembers(household.id);
+  const same = members.find((m) => m.name.toLowerCase() === from.name.toLowerCase());
+  if (same) {
+    if (same.pin_hash === from.pin_hash) return same;
+    throw new UserError(`Someone named ${from.name} is already in here. Sign in with their PIN instead.`);
+  }
+  if (asHost) return insertMember(household.id, from.name, from.pin_hash, true, 0, from.color);
+  return joinHousehold(household, from.name, from.pin_hash, from.color);
 }
 
 export async function listMembers(householdId: string): Promise<Member[]> {
@@ -116,7 +136,7 @@ async function getDay(householdId: string, date: string): Promise<DinnerDay | un
   return d;
 }
 
-async function claim(householdId: string, date: string, kind: string): Promise<boolean> {
+export async function claim(householdId: string, date: string, kind: string): Promise<boolean> {
   const db = getDb();
   const existing = await db.select("notification_log", { household_id: householdId, date, kind });
   if (existing.length) return false;
@@ -540,7 +560,7 @@ async function sendReminders(household: Household, date: string) {
 }
 
 export async function tick() {
-  const households = await getDb().select<Household>("households");
+  const households = await getDb().select<Household>("households", { kind: "dinner" });
   const results: { household: string; action: string }[] = [];
   for (const h of households) {
     const now = zonedNow(h.timezone);

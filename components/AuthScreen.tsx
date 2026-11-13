@@ -2,17 +2,55 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Crown, KeyRound, Sparkles, UserPlus } from "lucide-react";
-import { useCallback, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import useSWR from "swr";
 import { api, ApiError, fetcher } from "@/lib/client";
 import { Avatar } from "./Avatar";
+import { GarbageLogo } from "./GarbageLogo";
 import { Logo } from "./Logo";
 import { PinPad } from "./PinPad";
+
+type Space = "dinner" | "garbage";
 
 interface Info {
   setupNeeded: boolean;
   household?: string;
   members: { id: string; name: string; color: string; isHost: boolean }[];
+  /** Signed in to the other space already: can start/join this one without a second PIN. */
+  linkable?: { name: string; color: string } | null;
+}
+
+const COPY = {
+  dinner: {
+    pick: "Who's eating?",
+    newHere: "New here? Join the family",
+    setupTitle: "Set up your table",
+    setupSub: "Create your family's dinner space. You'll be the host.",
+    nameLabel: "Family name",
+    namePlaceholder: "The Sharma Kitchen",
+    joinTitle: "Join the family",
+    joinSub: "Ask the host for the invite code (it's in their Me tab).",
+    offline: "Can't reach the kitchen",
+  },
+  garbage: {
+    pick: "Who's on duty?",
+    newHere: "New here? Join the group",
+    setupTitle: "Start garbage day",
+    setupSub: "Create a group for taking the garbage out. You'll be the host.",
+    nameLabel: "Group name",
+    namePlaceholder: "Home",
+    joinTitle: "Join the group",
+    joinSub: "Ask the host for the invite code (it's in their Group tab).",
+    offline: "Can't reach the server",
+  },
+} as const;
+
+const SpaceCtx = createContext<Space>("dinner");
+const useSpace = () => useContext(SpaceCtx);
+const useCopy = () => COPY[useSpace()];
+const qs = (space: Space) => (space === "garbage" ? "?space=garbage" : "");
+function SpaceLogo({ size }: { size: number }) {
+  return useSpace() === "garbage" ? <GarbageLogo size={size} /> : <Logo size={size} />;
 }
 
 type View =
@@ -21,18 +59,23 @@ type View =
   | { k: "join" }
   | { k: "joinpin"; code: string; name: string }
   | { k: "setup" }
-  | { k: "setuppin"; householdName: string; name: string };
+  | { k: "setuppin"; householdName: string; name: string }
+  | { k: "joinlink" }
+  | { k: "setuplink" };
 
 const errMsg = (e: unknown) => (e instanceof ApiError ? e.message : "Couldn't connect. Check your internet.");
 
-export function AuthScreen({ onDone }: { onDone: () => void }) {
-  const { data, error, mutate } = useSWR<Info>("/api/auth/members", fetcher, { revalidateOnFocus: false });
+export function AuthScreen({ onDone, space = "dinner" }: { onDone: () => void; space?: Space }) {
+  const copy = COPY[space];
+  const { data, error, mutate } = useSWR<Info>(`/api/auth/members${qs(space)}`, fetcher, { revalidateOnFocus: false });
   const [view, setView] = useState<View>({ k: "pick" });
 
   const info = data;
-  const effective: View = info?.setupNeeded && view.k === "pick" ? { k: "setup" } : view;
+  const effective: View =
+    info?.setupNeeded && view.k === "pick" ? (info.linkable ? { k: "setuplink" } : { k: "setup" }) : view;
 
   return (
+    <SpaceCtx.Provider value={space}>
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-10">
       <AnimatePresence mode="wait">
         <motion.div
@@ -46,8 +89,8 @@ export function AuthScreen({ onDone }: { onDone: () => void }) {
           {!info && !error && <LoadingAuth />}
           {error && !info && (
             <div className="my-auto text-center">
-              <Logo size={64} />
-              <p className="mt-6 font-display text-2xl">Can&apos;t reach the kitchen</p>
+              <SpaceLogo size={64} />
+              <p className="mt-6 font-display text-2xl">{copy.offline}</p>
               <p className="mt-2 text-sm text-muted">{errMsg(error)}</p>
               <button
                 onClick={() => mutate()}
@@ -69,18 +112,24 @@ export function AuthScreen({ onDone }: { onDone: () => void }) {
               title={`Pick a PIN, ${effective.name}`}
               back={() => setView({ k: "join" })}
               onDone={async (pin) => {
-                await api("/api/auth/join", { json: { code: effective.code, name: effective.name, pin } });
+                await api(`/api/auth/join${qs(space)}`, { json: { code: effective.code, name: effective.name, pin } });
                 onDone();
               }}
             />
           )}
           {info && effective.k === "setup" && <SetupForm next={(householdName, name) => setView({ k: "setuppin", householdName, name })} />}
+          {info && effective.k === "setuplink" && info.linkable && (
+            <LinkedSetup who={info.linkable} onDone={onDone} />
+          )}
+          {info && effective.k === "joinlink" && info.linkable && (
+            <LinkedJoin who={info.linkable} back={() => setView({ k: "pick" })} onDone={onDone} />
+          )}
           {info && effective.k === "setuppin" && (
             <CreatePin
               title={`Pick a PIN, ${effective.name}`}
               back={() => setView({ k: "setup" })}
               onDone={async (pin) => {
-                await api("/api/auth/setup", {
+                await api(`/api/auth/setup${qs(space)}`, {
                   json: { householdName: effective.householdName, name: effective.name, pin },
                 });
                 onDone();
@@ -90,13 +139,14 @@ export function AuthScreen({ onDone }: { onDone: () => void }) {
         </motion.div>
       </AnimatePresence>
     </main>
+    </SpaceCtx.Provider>
   );
 }
 
 function LoadingAuth() {
   return (
     <div className="my-auto flex flex-col items-center gap-6">
-      <Logo size={72} />
+      <SpaceLogo size={72} />
       <div className="skeleton h-6 w-40" />
       <div className="grid w-full grid-cols-2 gap-3">
         <div className="skeleton h-36" />
@@ -109,7 +159,7 @@ function LoadingAuth() {
 function Heading({ title, subtitle, logo = true }: { title: string; subtitle?: string; logo?: boolean }) {
   return (
     <div className="mb-8 flex flex-col items-center text-center">
-      {logo && <Logo size={68} />}
+      {logo && <SpaceLogo size={68} />}
       <h1 className="mt-5 font-display text-4xl leading-tight font-semibold tracking-tight">{title}</h1>
       {subtitle && <p className="mt-2 max-w-xs text-[15px] text-muted">{subtitle}</p>}
     </div>
@@ -129,9 +179,10 @@ function BackButton({ onClick }: { onClick: () => void }) {
 }
 
 function PickMember({ info, setView }: { info: Info; setView: (v: View) => void }) {
+  const copy = useCopy();
   return (
     <div className="my-auto">
-      <Heading title="Who's eating?" subtitle={info.household ? `Welcome to ${info.household}` : undefined} />
+      <Heading title={copy.pick} subtitle={info.household ? `Welcome to ${info.household}` : undefined} />
       <div className="grid grid-cols-2 gap-3">
         {info.members.map((m, i) => (
           <motion.button
@@ -151,11 +202,20 @@ function PickMember({ info, setView }: { info: Info; setView: (v: View) => void 
           </motion.button>
         ))}
       </div>
+      {info.linkable && (
+        <button
+          onClick={() => setView({ k: "joinlink" })}
+          className="mx-auto mt-6 flex items-center gap-3 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white shadow-card"
+        >
+          <Avatar name={info.linkable.name} color={info.linkable.color} size={26} />
+          Join as {info.linkable.name}
+        </button>
+      )}
       <button
         onClick={() => setView({ k: "join" })}
-        className="mx-auto mt-8 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:text-ink"
+        className="mx-auto mt-6 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:text-ink"
       >
-        <UserPlus size={16} /> New here? Join the family
+        <UserPlus size={16} /> {copy.newHere}
       </button>
     </div>
   );
@@ -242,14 +302,15 @@ function PrimaryButton({ children, disabled, onClick }: { children: ReactNode; d
 }
 
 function SetupForm({ next }: { next: (householdName: string, name: string) => void }) {
+  const copy = useCopy();
   const [family, setFamily] = useState("");
   const [name, setName] = useState("");
   const ok = family.trim().length > 1 && name.trim().length > 0;
   return (
     <div className="my-auto">
-      <Heading title="Set up your table" subtitle="Create your family's dinner space. You'll be the host." />
+      <Heading title={copy.setupTitle} subtitle={copy.setupSub} />
       <div className="space-y-4">
-        <Field label="Family name" value={family} onChange={setFamily} placeholder="The Sharma Kitchen" autoFocus />
+        <Field label={copy.nameLabel} value={family} onChange={setFamily} placeholder={copy.namePlaceholder} autoFocus />
         <Field label="Your name" value={name} onChange={setName} placeholder="Chitra" maxLength={24} />
         <div className="pt-2">
           <PrimaryButton disabled={!ok} onClick={() => next(family.trim(), name.trim())}>
@@ -262,6 +323,7 @@ function SetupForm({ next }: { next: (householdName: string, name: string) => vo
 }
 
 function JoinForm({ back, next }: { back: () => void; next: (code: string, name: string) => void }) {
+  const copy = useCopy();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const ok = code.trim().length >= 4 && name.trim().length > 0;
@@ -269,7 +331,7 @@ function JoinForm({ back, next }: { back: () => void; next: (code: string, name:
     <div>
       <BackButton onClick={back} />
       <div className="pt-4">
-        <Heading title="Join the family" subtitle="Ask the host for the invite code (it's in their Me tab)." logo={false} />
+        <Heading title={copy.joinTitle} subtitle={copy.joinSub} logo={false} />
         <div className="space-y-4">
           <Field label="Invite code" value={code} onChange={setCode} placeholder="ABC123" maxLength={6} upper autoFocus />
           <Field label="Your name" value={name} onChange={setName} placeholder="Your first name" maxLength={24} />
@@ -328,6 +390,78 @@ function CreatePin({
           logo={false}
         />
         <PinPad key={first === null ? "a" : "b"} onSubmit={submit} error={first === null ? error : null} />
+      </div>
+    </div>
+  );
+}
+
+/** Start this space using the login from the other space: just a name for the group, no second PIN. */
+function LinkedSetup({ who, onDone }: { who: { name: string; color: string }; onDone: () => void }) {
+  const space = useSpace();
+  const copy = useCopy();
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/auth/setup${qs(space)}`, { json: { householdName: name.trim(), useOtherLogin: true } });
+      onDone();
+    } catch (e) {
+      setError(errMsg(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="my-auto">
+      <Heading title={copy.setupTitle} subtitle={copy.setupSub} />
+      <div className="space-y-4">
+        <Field label={copy.nameLabel} value={name} onChange={setName} placeholder={copy.namePlaceholder} autoFocus />
+        {error && <p className="px-1 text-sm font-medium text-no">{error}</p>}
+        <div className="pt-2">
+          <PrimaryButton disabled={name.trim().length < 2 || busy} onClick={go}>
+            <Avatar name={who.name} color={who.color} size={26} /> Start as {who.name}
+          </PrimaryButton>
+        </div>
+        <p className="text-center text-xs text-muted">You&apos;re already signed in, so there&apos;s no new PIN to remember.</p>
+      </div>
+    </div>
+  );
+}
+
+/** Join this space with the invite code, reusing the login from the other space. */
+function LinkedJoin({ who, back, onDone }: { who: { name: string; color: string }; back: () => void; onDone: () => void }) {
+  const space = useSpace();
+  const copy = useCopy();
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/auth/join${qs(space)}`, { json: { code: code.trim(), useOtherLogin: true } });
+      onDone();
+    } catch (e) {
+      setError(errMsg(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div>
+      <BackButton onClick={back} />
+      <div className="pt-4">
+        <Heading title={copy.joinTitle} subtitle={copy.joinSub} logo={false} />
+        <div className="space-y-4">
+          <Field label="Invite code" value={code} onChange={setCode} placeholder="ABC123" maxLength={6} upper autoFocus />
+          {error && <p className="px-1 text-sm font-medium text-no">{error}</p>}
+          <div className="pt-2">
+            <PrimaryButton disabled={code.trim().length < 4 || busy} onClick={go}>
+              <Avatar name={who.name} color={who.color} size={26} /> Join as {who.name}
+            </PrimaryButton>
+          </div>
+        </div>
       </div>
     </div>
   );

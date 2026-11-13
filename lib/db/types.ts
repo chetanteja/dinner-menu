@@ -18,6 +18,8 @@ export interface Household {
   timezone: string;
   remind_time: string;
   lock_time: string;
+  kind: "dinner" | "garbage";
+  anchor_date: string | null;
   created_at: string;
 }
 
@@ -88,4 +90,12 @@ export interface PushSub {
   p256dh: string;
   auth: string;
   created_at: string;
+}
+
+export interface GarbageDayRow {
+  household_id: string;
+  date: string;
+  assigned_to: string | null;
+  done_at: string | null;
+  done_by: string | null;
 }

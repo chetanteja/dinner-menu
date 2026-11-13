@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 import { getDb } from "./db";
 import type { Member } from "./db/types";
 
-const COOKIE = "dm_session";
+export type Space = "dinner" | "garbage";
+
+/** Each space has its own cookie, so one phone can be signed in to both at once. */
+const COOKIE: Record<Space, string> = { dinner: "dm_session", garbage: "gb_session" };
 const MAX_AGE = 60 * 60 * 24 * 180;
 
 function secret() {
@@ -15,13 +18,17 @@ function secret() {
   return new TextEncoder().encode(s);
 }
 
-export async function createSession(memberId: string, householdId: string) {
-  const token = await new SignJWT({ mid: memberId, hid: householdId })
+export function spaceOf(req: Request): Space {
+  return new URL(req.url).searchParams.get("space") === "garbage" ? "garbage" : "dinner";
+}
+
+export async function createSession(memberId: string, householdId: string, space: Space = "dinner") {
+  const token = await new SignJWT({ mid: memberId, hid: householdId, sp: space })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
     .sign(secret());
-  (await cookies()).set(COOKIE, token, {
+  (await cookies()).set(COOKIE[space], token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -30,15 +37,17 @@ export async function createSession(memberId: string, householdId: string) {
   });
 }
 
-export async function clearSession() {
-  (await cookies()).delete(COOKIE);
+export async function clearSession(space: Space = "dinner") {
+  (await cookies()).delete(COOKIE[space]);
 }
 
-export async function getSessionMember(): Promise<Member | null> {
-  const token = (await cookies()).get(COOKIE)?.value;
+export async function getSessionMember(space: Space = "dinner"): Promise<Member | null> {
+  const token = (await cookies()).get(COOKIE[space])?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
+    // Tokens issued before garbage existed have no "sp" and are dinner sessions.
+    if (((payload.sp as Space | undefined) ?? "dinner") !== space) return null;
     const [member] = await getDb().select<Member>("members", {
       id: payload.mid as string,
       household_id: payload.hid as string,

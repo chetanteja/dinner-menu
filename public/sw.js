@@ -12,8 +12,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || "Dinner Menu", {
       body: data.body || "",
-      icon: "/pwa-icon/192",
-      badge: "/pwa-icon/192",
+      icon: data.icon || "/pwa-icon/192",
+      badge: data.icon || "/pwa-icon/192",
       tag: data.tag || "dinner",
       renotify: true,
       data: { url: data.url || "/" },
@@ -27,7 +27,11 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const c of list) {
-        if ("focus" in c) return c.focus();
+        if ("focus" in c) {
+          // Bring the open window to the right page (dinner "/" or garbage "/garbage").
+          if ("navigate" in c && new URL(c.url).pathname !== url) return c.navigate(url).then((w) => (w || c).focus());
+          return c.focus();
+        }
       }
       return self.clients.openWindow(url);
     }),

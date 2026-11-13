@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionMember } from "./auth";
+import { getSessionMember, spaceOf, type Space } from "./auth";
 import type { Member } from "./db/types";
 
 export const json = (data: unknown, status = 200) => NextResponse.json(data, { status });
@@ -7,11 +7,14 @@ export const fail = (message: string, status = 400) => json({ error: message }, 
 
 type Handler = (req: Request, member: Member, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
-/** Wrap a route handler so it requires a signed-in member and never leaks stack traces. */
-export function authed(handler: Handler) {
+/**
+ * Wrap a route handler so it requires a signed-in member and never leaks stack traces.
+ * `space` picks which session cookie to check; "query" reads ?space=garbage (shared routes only).
+ */
+export function authed(handler: Handler, space: Space | "query" = "dinner") {
   return async (req: Request, ctx: { params: Promise<Record<string, string>> }) => {
     try {
-      const member = await getSessionMember();
+      const member = await getSessionMember(space === "query" ? spaceOf(req) : space);
       if (!member) return fail("Not signed in", 401);
       return await handler(req, member, ctx);
     } catch (e) {

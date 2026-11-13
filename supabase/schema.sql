@@ -9,6 +9,9 @@ create table if not exists households (
   timezone text not null default 'Asia/Kolkata',
   remind_time text not null default '17:00',
   lock_time text not null default '18:00',
+  -- 'garbage' households are a separate group (own members + invite code) for garbage day.
+  kind text not null default 'dinner' check (kind in ('dinner', 'garbage')),
+  anchor_date date,
   created_at timestamptz not null default now()
 );
 
@@ -82,10 +85,21 @@ create table if not exists final_menu (
 create table if not exists push_subscriptions (
   id uuid primary key,
   member_id uuid not null references members(id) on delete cascade,
-  endpoint text not null unique,
+  endpoint text not null,
   p256dh text not null,
   auth text not null,
   created_at timestamptz not null default now()
+);
+create unique index if not exists push_subs_member_endpoint on push_subscriptions (member_id, endpoint);
+
+-- Garbage day: who is taking it out on a pickup date, and whether it's done.
+create table if not exists garbage_days (
+  household_id uuid not null references households(id) on delete cascade,
+  date date not null,
+  assigned_to uuid references members(id) on delete set null,
+  done_at timestamptz,
+  done_by uuid references members(id) on delete set null,
+  primary key (household_id, date)
 );
 
 -- Makes reminders / lock announcements fire at most once per day.
@@ -106,3 +120,4 @@ alter table picks enable row level security;
 alter table final_menu enable row level security;
 alter table push_subscriptions enable row level security;
 alter table notification_log enable row level security;
+alter table garbage_days enable row level security;

@@ -21,6 +21,7 @@ export interface PushPayload {
   title: string;
   body: string;
   url?: string;
+  icon?: string;
   tag?: string;
 }
 
@@ -41,7 +42,7 @@ export async function pushToMembers(memberIds: string[], payload: PushPayload): 
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
         if (status === 404 || status === 410) {
-          await db.remove("push_subscriptions", { id: s.id });
+          await db.remove("push_subscriptions", { endpoint: s.endpoint });
         } else {
           console.error("push failed", status);
         }
