@@ -316,7 +316,7 @@ try {
   gs = await gstate();
   check("assignments show in state", gs.days[0].assignedTo === gid("Amma") && gs.days[1].assignedTo === gid("Neighbour"), gs.days);
   r = await call("/api/garbage/ping", {}, gAmma);
-  check("the person down for it cannot ping themselves", r.status === 400, r);
+  check("the person on duty can announce it too (Riya and Neighbour are notified)", r.status === 200 && r.json?.notified === 2, r);
   await shot("12-garbage-today", { cookie: gRiya, path: "/garbage" });
   await shot("12b-garbage-today-mine", { cookie: gAmma, path: "/garbage", scheme: "dark" });
   await shot("14-garbage-assign-sheet", {
@@ -340,8 +340,6 @@ try {
   });
 
   r = await call("/api/garbage/ping", {}, gRiya);
-  check("anyone else can ping the person who's down for it", r.status === 200 && r.json?.notified === "Amma", r);
-  r = await call("/api/garbage/ping", {}, gNeighbour);
   check("pings are throttled for the whole group", r.status === 429, r);
   r = await call("/api/garbage/done", { date: addD(today, 2), done: true }, gNeighbour);
   check("cannot mark a future pickup as done", r.status === 400, r);

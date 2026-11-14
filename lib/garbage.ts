@@ -152,8 +152,9 @@ export async function setDone(member: Member, date: string, done: boolean) {
 const PING_COOLDOWN_MS = 3 * 60 * 1000;
 
 /**
- * Nudge on demand: "garbage needs to go out now". Goes to whoever is down for today, or to everyone
- * else in the group when nobody is. Only on an open garbage day; one ping per 3 minutes per group.
+ * Announce on demand, like the dinner "food is ready" ping: everyone in the group (except the
+ * sender) gets a push saying who has garbage duty today. The person down for it gets a personal
+ * version. Only on a garbage day that isn't done yet; one ping per 3 minutes per group.
  */
 export async function pingGarbage(member: Member) {
   const group = await getGroup(member);
@@ -161,7 +162,6 @@ export async function pingGarbage(member: Member) {
   if (!isPickupDay(group.anchor_date ?? null, now.date)) throw new UserError("There's no garbage pickup today");
   const day = await getDayRow(group.id, now.date);
   if (day?.done_at) throw new UserError("It's already been taken out");
-  if (day?.assigned_to === member.id) throw new UserError("You're the one down for it today");
 
   // notification_log is unique per (group, date, kind), so each ping logs a timestamped kind.
   const logs = await getDb().select<{ kind: string; created_at: string }>("notification_log", {
@@ -174,7 +174,7 @@ export async function pingGarbage(member: Member) {
     .sort((a, b) => b - a)[0];
   if (last && Date.now() - last < PING_COOLDOWN_MS) {
     const mins = Math.max(1, Math.ceil((PING_COOLDOWN_MS - (Date.now() - last)) / 60000));
-    throw new UserError(`Someone just pinged. You can ping again in ${mins} min.`, 429);
+    throw new UserError(`Everyone was just pinged. You can ping again in ${mins} min.`, 429);
   }
   await getDb().insert("notification_log", {
     household_id: group.id,
@@ -185,16 +185,28 @@ export async function pingGarbage(member: Member) {
 
   const members = await listMembers(group.id);
   const assignee = day?.assigned_to ? members.find((m) => m.id === day.assigned_to) : undefined;
-  const targets = assignee ? [assignee.id] : members.filter((m) => m.id !== member.id).map((m) => m.id);
-  await pushToMembers(targets, {
-    title: "Garbage needs to go out 🗑️",
-    body: assignee
-      ? `${member.name} is asking you to take the garbage out now.`
-      : `${member.name} is asking: can someone take the garbage out now?`,
-    tag: "garbage-ping",
-    ...GARBAGE_PUSH,
-  });
-  return { notified: assignee ? assignee.name : "everyone" };
+  const others = members.filter((m) => m.id !== member.id && m.id !== assignee?.id);
+
+  if (assignee && assignee.id !== member.id) {
+    await pushToMembers([assignee.id], {
+      title: "You're on garbage duty 🗑️",
+      body: `${member.name} is reminding everyone it's your turn to take the garbage out today.`,
+      tag: "garbage-ping",
+      ...GARBAGE_PUSH,
+    });
+  }
+  await pushToMembers(
+    others.map((m) => m.id),
+    {
+      title: assignee ? `${assignee.id === member.id ? member.name : assignee.name} has garbage duty today 🗑️` : "Garbage day 🗑️",
+      body: assignee
+        ? `${assignee.id === member.id ? member.name : assignee.name} is taking the garbage out today. Thanks in advance!`
+        : `Garbage goes out today and nobody's down for it yet. Can someone take it out? (${member.name} pinged)`,
+      tag: "garbage-ping",
+      ...GARBAGE_PUSH,
+    },
+  );
+  return { notified: others.length + (assignee && assignee.id !== member.id ? 1 : 0) };
 }
 
 export async function updateGarbageSettings(member: Member, remindTime: string) {

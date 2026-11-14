@@ -231,7 +231,7 @@ function TodayCard({ row, onAssign }: { row: GarbageDayView; onAssign: () => voi
         </div>
         {error && <p className="mt-3 text-sm font-medium">{error}</p>}
 
-        {!done && !mine && (
+        {!done && (
           <>
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -241,11 +241,11 @@ function TodayCard({ row, onAssign }: { row: GarbageDayView; onAssign: () => voi
             >
               {pinged ? (
                 <>
-                  <Check size={16} strokeWidth={3} /> Pinged {person ? person.name : "everyone"}
+                  <Check size={16} strokeWidth={3} /> Everyone notified
                 </>
               ) : (
                 <>
-                  <BellRing size={16} /> {pinging ? "Sending…" : person ? `Ping ${person.name} now` : "Ping everyone now"}
+                  <BellRing size={16} /> {pinging ? "Sending…" : "Notify everyone"}
                 </>
               )}
             </motion.button>
