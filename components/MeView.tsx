@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CATEGORIES } from "@/lib/constants";
-import { CAT_STYLE } from "@/lib/client";
+import { api, CAT_STYLE } from "@/lib/client";
 import { disablePush, enablePush, getPushStatus, type PushSpace, type PushStatus } from "@/lib/pushClient";
 import { formatClock } from "@/lib/time";
 import { useApp } from "./AppContext";
@@ -75,6 +75,7 @@ export function Notifications({
 }) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState<{ busy: boolean; msg: string | null }>({ busy: false, msg: null });
 
   useEffect(() => {
     getPushStatus().then(setStatus).catch(() => setStatus("unsupported"));
@@ -88,6 +89,24 @@ export function Notifications({
       setStatus(await getPushStatus());
     } finally {
       setBusy(false);
+    }
+  };
+
+  const sendTest = async () => {
+    setTest({ busy: true, msg: null });
+    try {
+      // Re-register this phone first, so the test also repairs a missing subscription.
+      await enablePush(space);
+      const res = await api<{ sent: number }>(`/api/push/test${space === "garbage" ? "?space=garbage" : ""}`, { json: {} });
+      setTest({
+        busy: false,
+        msg:
+          res.sent > 0
+            ? "Sent. It should pop up in a few seconds."
+            : "Nothing was delivered. Check that push keys are set on the server.",
+      });
+    } catch {
+      setTest({ busy: false, msg: "Couldn't send. Try turning notifications off and on." });
     }
   };
 
@@ -120,6 +139,18 @@ export function Notifications({
           </button>
         )}
       </div>
+      {status === "on" && (
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            disabled={test.busy}
+            onClick={sendTest}
+            className="glass rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            {test.busy ? "Sending…" : "Send me a test"}
+          </button>
+          {test.msg && <span className="min-w-0 flex-1 text-xs text-muted">{test.msg}</span>}
+        </div>
+      )}
     </Section>
   );
 }

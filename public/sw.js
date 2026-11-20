@@ -23,17 +23,15 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin);
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      for (const c of list) {
-        if ("focus" in c) {
-          // Bring the open window to the right page (dinner "/" or garbage "/garbage").
-          if ("navigate" in c && new URL(c.url).pathname !== url) return c.navigate(url).then((w) => (w || c).focus());
-          return c.focus();
-        }
-      }
-      return self.clients.openWindow(url);
-    }),
+    (async () => {
+      const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      // The right page (dinner "/" or garbage "/garbage") is already open: bring it forward.
+      const same = list.find((c) => new URL(c.url).pathname === target.pathname);
+      if (same && "focus" in same) return same.focus();
+      // Otherwise open it. Don't navigate some other app's window (e.g. dinner) to the garbage page.
+      if (self.clients.openWindow) return self.clients.openWindow(target.href);
+    })(),
   );
 });

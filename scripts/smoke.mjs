@@ -389,6 +389,26 @@ try {
     subsOf(),
   );
 
+  // One request from a phone signed in to both spaces registers it for both accounts.
+  const E2 = "https://push.example/endpoint-2";
+  const both = `${riya}; ${gRiya}`;
+  r = await call("/api/push/subscribe", fakeSub(E2), both);
+  const subsOf2 = () =>
+    JSON.parse(fsMod.readFileSync("/u/cv56729/dinner_menu/.data/db.json", "utf8")).push_subscriptions.filter((x) => x.endpoint === E2);
+  check(
+    "subscribing from the dinner app also registers the garbage account",
+    r.status === 200 && subsOf2().length === 2 && new Set(subsOf2().map((x) => x.member_id)).size === 2,
+    subsOf2(),
+  );
+  r = await call("/api/push/subscribe", fakeSub(E2), gRiya);
+  check("subscribing from the garbage app alone leaves the dinner registration alone", r.status === 200 && subsOf2().length === 2, subsOf2());
+  r = await call("/api/push/subscribe", fakeSub(E2));
+  check("subscribing while signed out is refused", r.status === 401, r);
+  r = await call("/api/push/test?space=garbage", {}, gRiya);
+  check("test notification endpoint works for the garbage account", r.status === 200 && typeof r.json?.sent === "number", r);
+  r = await fetch(B + "/api/push/subscribe", { method: "DELETE", headers: { "Content-Type": "application/json", Cookie: both }, body: JSON.stringify({ endpoint: E2 }) });
+  check("turning notifications off removes both registrations", r.status === 200 && subsOf2().length === 0, subsOf2());
+
   // Sign in with PIN lands in the right space
   r = await call("/api/auth/login", { memberId: gid("Neighbour"), pin: "4444" });
   check("garbage PIN login sets the garbage cookie", r.status === 200 && r.cookie?.startsWith("gb_session="), r);
